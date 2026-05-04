@@ -1,0 +1,2176 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1F1E1B">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="התקדמות">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <title>התקדמות יומית</title>
+
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%231F1E1B'/><path d='M50 25 L55 45 L75 50 L55 55 L50 75 L45 55 L25 50 L45 45 Z' fill='%23FAF1E0'/></svg>">
+  <link rel="apple-touch-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231F1E1B'/><path d='M50 25 L55 45 L75 50 L55 55 L50 75 L45 55 L25 50 L45 45 Z' fill='%23FAF1E0'/></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&family=Heebo:wght@400;500;700&display=swap">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: "Assistant", "Heebo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #FAFAF7;
+      color: #1F1E1B;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overscroll-behavior-y: contain;
+    }
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+    #root {
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+    /* Loading splash */
+    .splash {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: #FAFAF7;
+      z-index: 9999;
+      transition: opacity 0.3s;
+    }
+    .splash.hide { opacity: 0; pointer-events: none; }
+    .splash-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #B89968;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1.2); }
+    }
+  </style>
+</head>
+<body>
+  <div class="splash" id="splash"><div class="splash-dot"></div></div>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+// Lucide-style icons (inlined for offline use)
+const __makeIcon = (innerSvg) => function IconComponent(props) {
+  const { size = 24, fill = 'none', strokeWidth = 2, ...rest } = props || {};
+  return React.createElement('svg', {
+    xmlns: 'http://www.w3.org/2000/svg',
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: fill,
+    stroke: 'currentColor',
+    strokeWidth: strokeWidth,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    dangerouslySetInnerHTML: { __html: innerSvg },
+    ...rest,
+  });
+};
+const Plus = __makeIcon(`<path d="M5 12h14"/><path d="M12 5v14"/>`);
+const Sparkles = __makeIcon(`<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>`);
+const Check = __makeIcon(`<path d="M20 6 9 17l-5-5"/>`);
+const X = __makeIcon(`<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`);
+const ChevronLeft = __makeIcon(`<path d="m15 18-6-6 6-6"/>`);
+const ChevronRight = __makeIcon(`<path d="m9 18 6-6-6-6"/>`);
+const Droplet = __makeIcon(`<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>`);
+const BarChart3 = __makeIcon(`<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>`);
+const TrendingUp = __makeIcon(`<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>`);
+const ArrowLeft = __makeIcon(`<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>`);
+const Trash2 = __makeIcon(`<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>`);
+const Flame = __makeIcon(`<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>`);
+const Calendar = __makeIcon(`<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>`);
+const CopyPlus = __makeIcon(`<line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>`);
+const Pencil = __makeIcon(`<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>`);
+const Clock = __makeIcon(`<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>`);
+const Tag = __makeIcon(`<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>`);
+const RotateCw = __makeIcon(`<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>`);
+const Link2 = __makeIcon(`<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>`);
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+const COLORS = {
+  bg: '#FAFAF7',
+  card: '#FFFFFF',
+  border: '#EFEEEA',
+  borderSoft: '#F5F4F0',
+  ink: '#1F1E1B',
+  inkSoft: '#5A5853',
+  inkLight: '#9C9A93',
+  inkVeryLight: '#C4C2BC',
+
+  moment: '#B89968',
+  momentTint: '#FAF1E0',
+
+  cnf: '#DC2626',
+  h: '#EA580C',
+  m: '#EAB308',
+  o: '#9CA3AF',
+};
+
+const FONT = `"Assistant", "Heebo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+
+const CATEGORY_PALETTE = [
+  { color: '#8B5A3C', tint: '#F5EBE3' },
+  { color: '#5A8B6F', tint: '#E8F0EA' },
+  { color: '#5A6F8B', tint: '#E8ECEF' },
+  { color: '#A86B5A', tint: '#F5E5E0' },
+  { color: '#7B5A8B', tint: '#EFE5F0' },
+  { color: '#5A8B85', tint: '#E5EDEC' },
+  { color: '#7B7140', tint: '#EFEDE0' },
+  { color: '#8B6B5A', tint: '#F0E8E3' },
+  { color: '#6B7B5A', tint: '#EAEEE3' },
+  { color: '#8B5A6F', tint: '#F0E3E8' },
+];
+
+const KNOWN_CATEGORY_COLORS = {
+  'מים': { color: '#5A8B85', tint: '#E5EDEC' },
+  'אומנות': { color: '#8B5A3C', tint: '#F5EBE3' },
+  'בריאות': { color: '#5A8B6F', tint: '#E8F0EA' },
+  'בירוקרטיה': { color: '#5A6F8B', tint: '#E8ECEF' },
+};
+
+const URGENCY_ORDER = ['cnf', 'h', 'm', 'o'];
+const URGENCY_LABELS = { cnf: 'CNF', h: 'H', m: 'M', o: 'O' };
+const URGENCY_COLORS = { cnf: COLORS.cnf, h: COLORS.h, m: COLORS.m, o: COLORS.o };
+
+const WATER_GOAL = 8;
+
+const LEGACY_AREAS = {
+  art: { name: 'אומנות', subs: { research: 'מחקר', creation: 'יצירה', planning: 'תכנון' } },
+  health: { name: 'בריאות', subs: { water: 'מים', vitamins: 'ויטמינים', sport: 'ספורט', food: 'אוכל' } },
+  bureaucracy: { name: 'בירוקרטיה', subs: null },
+};
+
+// ============================================
+// STORAGE
+// ============================================
+
+const storage = {
+  async get(key) {
+    try {
+      const v = localStorage.getItem(key);
+      return v ? JSON.parse(v) : null;
+    } catch { return null; }
+  },
+  async set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); }
+    catch (e) { console.error('Storage set failed', e); }
+  },
+};
+
+// ============================================
+// HELPERS
+// ============================================
+
+function getDayKey(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function formatHebDate(date) {
+  try {
+    return new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
+  } catch { return date.toLocaleDateString(); }
+}
+
+function formatHebShort(date) {
+  try {
+    return new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short' }).format(date);
+  } catch { return date.toLocaleDateString(); }
+}
+
+function dayKeyFromString(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function urgencyRank(u) { return URGENCY_ORDER.indexOf(u); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function isWaterCategory(category) {
+  if (!category) return false;
+  return category.trim() === 'מים';
+}
+
+function isTaskComplete(task) {
+  if (isWaterCategory(task.category)) {
+    return (task.waterCups || 0) >= WATER_GOAL;
+  }
+  return !!task.completed;
+}
+
+function getDaysAgoKey(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return getDayKey(d);
+}
+
+function getCategoryColor(category) {
+  if (!category) return CATEGORY_PALETTE[0];
+  const trimmed = category.trim();
+  if (KNOWN_CATEGORY_COLORS[trimmed]) return KNOWN_CATEGORY_COLORS[trimmed];
+  let hash = 0;
+  for (let i = 0; i < trimmed.length; i++) {
+    hash = (hash * 31 + trimmed.charCodeAt(i)) % 1000003;
+  }
+  return CATEGORY_PALETTE[Math.abs(hash) % CATEGORY_PALETTE.length];
+}
+
+function firstLetter(str) {
+  if (!str) return '?';
+  return str.trim().charAt(0).toUpperCase();
+}
+
+function migrateTask(task) {
+  if (task.category) return task;
+  if (!task.area) return { ...task, category: 'כללי' };
+  const legacy = LEGACY_AREAS[task.area];
+  if (!legacy) return { ...task, category: 'כללי' };
+  if (task.area === 'health' && task.sub === 'water') {
+    return { ...task, category: 'מים' };
+  }
+  if (task.sub && legacy.subs && legacy.subs[task.sub]) {
+    return { ...task, category: `${legacy.name} · ${legacy.subs[task.sub]}` };
+  }
+  return { ...task, category: legacy.name };
+}
+
+// ============================================
+// MAIN APP
+// ============================================
+
+function App() {
+  const [view, setView] = useState('today');
+  const [tasks, setTasks] = useState([]);
+  const [moments, setMoments] = useState([]);
+  const [chains, setChains] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [todayKey, setTodayKey] = useState(getDayKey());
+
+  useEffect(() => {
+    if (!document.getElementById('hebrew-fonts')) {
+      const link = document.createElement('link');
+      link.id = 'hebrew-fonts';
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&family=Heebo:wght@400;500;700&display=swap';
+      document.head.appendChild(link);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const t = (await storage.get('tasks')) || [];
+      const m = (await storage.get('moments')) || [];
+      const c = (await storage.get('chains')) || [];
+      setTasks(t.map(migrateTask));
+      setMoments(m);
+      setChains(c);
+      await storage.set('lastOpenDate', getDayKey());
+      setLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => { if (loaded) storage.set('tasks', tasks); }, [tasks, loaded]);
+  useEffect(() => { if (loaded) storage.set('moments', moments); }, [moments, loaded]);
+  useEffect(() => { if (loaded) storage.set('chains', chains); }, [chains, loaded]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newKey = getDayKey();
+      if (newKey !== todayKey) setTodayKey(newKey);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [todayKey]);
+
+  // Helper: compute day key from a base key + offset
+  const dayKeyAtOffset = useCallback((baseKey, offset) => {
+    const d = dayKeyFromString(baseKey);
+    d.setDate(d.getDate() + offset);
+    return getDayKey(d);
+  }, []);
+
+  // Add a task. If the text matches an enabled chain trigger, also create the linked tasks.
+  // If `newChain` is provided, persist it to the chains list (with the original task as the trigger).
+  const addTask = useCallback((task, newChain = null) => {
+    let chainTriggered = null;
+    let groupId = null;
+
+    // Check if this task triggers an existing chain (only if not creating a new chain right now)
+    if (!newChain) {
+      const triggerText = task.text.trim();
+      chainTriggered = chains.find(
+        (c) => c.enabled !== false && c.triggerText.trim() === triggerText
+      );
+    }
+
+    if (newChain || chainTriggered) {
+      groupId = uid();
+    }
+
+    const enrichedTask = {
+      ...task,
+      ...(groupId ? { chainGroupId: groupId } : {}),
+      ...(chainTriggered ? { chainId: chainTriggered.id } : {}),
+      ...(newChain ? { chainId: newChain.id || uid() } : {}),
+    };
+
+    const newTasks = [enrichedTask];
+    const chainToUse = newChain || chainTriggered;
+
+    if (chainToUse && chainToUse.links && chainToUse.links.length > 0) {
+      for (const link of chainToUse.links) {
+        const linkDayDate = dayKeyAtOffset(task.dayDate, link.dayOffset || 0);
+        const linkTask = {
+          id: uid(),
+          text: link.text,
+          category: link.category,
+          urgency: 'm',
+          completed: false,
+          isBonus: false,
+          dayDate: linkDayDate,
+          createdAt: Date.now() + 1, // ensure stable ordering after parent
+          completedAt: null,
+          chainId: chainToUse.id || enrichedTask.chainId,
+          chainGroupId: groupId,
+          ...(isWaterCategory(link.category) ? { waterCups: 0 } : {}),
+        };
+        newTasks.push(linkTask);
+      }
+    }
+
+    setTasks((prev) => [...prev, ...newTasks]);
+
+    if (newChain) {
+      // Persist the chain rule
+      const chainToSave = {
+        id: newChain.id || enrichedTask.chainId,
+        triggerText: task.text.trim(),
+        triggerCategory: task.category,
+        links: newChain.links,
+        enabled: true,
+        createdAt: Date.now(),
+      };
+      setChains((prev) => {
+        // If a chain with same triggerText exists, replace it
+        const filtered = prev.filter((c) => c.triggerText.trim() !== chainToSave.triggerText);
+        return [...filtered, chainToSave];
+      });
+    }
+  }, [chains, dayKeyAtOffset]);
+  const updateTask = useCallback(
+    (id, updates) => setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t))),
+    []
+  );
+  const deleteTask = useCallback((id) => setTasks((prev) => prev.filter((t) => t.id !== id)), []);
+  const moveTaskToTomorrow = useCallback((id) => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    updateTask(id, { dayDate: getDayKey(tomorrow) });
+  }, [updateTask]);
+  const moveTaskToToday = useCallback((id) => updateTask(id, { dayDate: getDayKey() }), [updateTask]);
+
+  const duplicateToTomorrow = useCallback((task) => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const newTask = {
+      ...task,
+      id: uid(),
+      dayDate: getDayKey(tomorrow),
+      completed: false,
+      isBonus: false,
+      completedAt: null,
+      createdAt: Date.now(),
+    };
+    if (isWaterCategory(task.category)) newTask.waterCups = 0;
+    setTasks((prev) => [...prev, newTask]);
+  }, []);
+
+  const addMoment = useCallback((text) => {
+    const m = { id: uid(), text, dayDate: getDayKey(), createdAt: Date.now() };
+    setMoments((prev) => [...prev, m]);
+  }, []);
+  const deleteMoment = useCallback((id) => setMoments((prev) => prev.filter((m) => m.id !== id)), []);
+
+  const resetAllData = useCallback(async () => {
+    setTasks([]);
+    setMoments([]);
+    setChains([]);
+    try {
+      await storage.set('tasks', []);
+      await storage.set('moments', []);
+      await storage.set('chains', []);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  // Delete the whole chain group (all tasks created together) for a single trigger event
+  const deleteChainGroup = useCallback((groupId) => {
+    setTasks((prev) => prev.filter((t) => t.chainGroupId !== groupId));
+  }, []);
+
+  // Update a chain rule
+  const updateChain = useCallback((id, updates) => {
+    setChains((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+  }, []);
+
+  // Delete a chain rule (does not affect existing tasks)
+  const deleteChain = useCallback((id) => {
+    setChains((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  // Toggle a chain rule's enabled state
+  const toggleChain = useCallback((id) => {
+    setChains((prev) => prev.map((c) => (c.id === id ? { ...c, enabled: c.enabled === false ? true : false } : c)));
+  }, []);
+
+  if (!loaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: COLORS.bg, fontFamily: FONT }}>
+        <div className="text-sm" style={{ color: COLORS.inkLight }}>✨</div>
+      </div>
+    );
+  }
+
+  return (
+    <div dir="rtl" className="min-h-screen" style={{ background: COLORS.bg, fontFamily: FONT, color: COLORS.ink }}>
+      <div className="max-w-md mx-auto px-5 pt-6" style={{ paddingBottom: view === 'today' ? '110px' : '32px' }}>
+        {view === 'today' && (
+          <TodayView
+            tasks={tasks} chains={chains} todayKey={todayKey}
+            onAdd={addTask} onUpdate={updateTask} onDelete={deleteTask}
+            onMoveToTomorrow={moveTaskToTomorrow} onMoveToToday={moveTaskToToday}
+            onDuplicateToTomorrow={duplicateToTomorrow}
+            onDeleteChainGroup={deleteChainGroup}
+            onOpenMoments={() => setView('moments')}
+            onOpenDaily={() => setView('daily')}
+            onOpenWeekly={() => setView('weekly')}
+            onOpenChains={() => setView('chains')}
+            onReset={resetAllData}
+          />
+        )}
+        {view === 'moments' && (
+          <MomentsView moments={moments} onAdd={addMoment} onDelete={deleteMoment} onBack={() => setView('today')} />
+        )}
+        {view === 'daily' && (
+          <DailySummaryView tasks={tasks} moments={moments} todayKey={todayKey} onBack={() => setView('today')} />
+        )}
+        {view === 'weekly' && (
+          <WeeklySummaryView tasks={tasks} moments={moments} todayKey={todayKey} onBack={() => setView('today')} />
+        )}
+        {view === 'chains' && (
+          <ChainsView chains={chains} onUpdate={updateChain} onDelete={deleteChain} onToggle={toggleChain} onBack={() => setView('today')} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// TODAY VIEW
+// ============================================
+
+function TodayView({ tasks, chains, todayKey, onAdd, onUpdate, onDelete, onMoveToTomorrow, onMoveToToday, onDuplicateToTomorrow, onDeleteChainGroup, onOpenMoments, onOpenDaily, onOpenWeekly, onOpenChains, onReset }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [dayOffset, setDayOffset] = useState(0);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
+  const viewedDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + dayOffset);
+    return d;
+  }, [dayOffset]);
+  const viewedDayKey = useMemo(() => getDayKey(viewedDate), [viewedDate]);
+  const isViewingToday = dayOffset === 0;
+
+  const dayLabel = useMemo(() => {
+    if (dayOffset === 0) return 'היום';
+    if (dayOffset === 1) return 'מחר';
+    if (dayOffset === 2) return 'מחרתיים';
+    if (dayOffset === -1) return 'אתמול';
+    return formatHebShort(viewedDate);
+  }, [dayOffset, viewedDate]);
+
+  const dayTasks = useMemo(() => tasks.filter((t) => t.dayDate === viewedDayKey), [tasks, viewedDayKey]);
+
+  // Pending tasks only relevant when viewing today
+  const pendingTasks = useMemo(
+    () => isViewingToday
+      ? tasks.filter((t) => t.dayDate < todayKey && !isTaskComplete(t))
+        .sort((a, b) => {
+          if (a.dayDate !== b.dayDate) return a.dayDate.localeCompare(b.dayDate);
+          return urgencyRank(a.urgency) - urgencyRank(b.urgency);
+        })
+      : [],
+    [tasks, todayKey, isViewingToday]
+  );
+
+  const sortedTasks = useMemo(() => {
+    return [...dayTasks].sort((a, b) => {
+      const aComp = isTaskComplete(a);
+      const bComp = isTaskComplete(b);
+      if (aComp !== bComp) return aComp ? 1 : -1;
+      const ru = urgencyRank(a.urgency) - urgencyRank(b.urgency);
+      if (ru !== 0) return ru;
+      return a.createdAt - b.createdAt;
+    });
+  }, [dayTasks]);
+
+  const completedCount = dayTasks.filter(isTaskComplete).length;
+  const totalCount = dayTasks.length;
+  const progress = totalCount > 0 ? completedCount / totalCount : 0;
+  const allDone = totalCount > 0 && completedCount === totalCount;
+
+  // Future tasks count: tasks beyond the currently viewed day
+  const futureCount = useMemo(
+    () => tasks.filter((t) => t.dayDate > viewedDayKey).length,
+    [tasks, viewedDayKey]
+  );
+
+  const goToToday = () => setDayOffset(0);
+  const goPrevDay = () => setDayOffset((o) => Math.max(0, o - 1));
+  const goNextDay = () => setDayOffset((o) => o + 1);
+
+  return (
+    <>
+      {/* Header */}
+      <div className="flex items-start justify-between mb-1">
+        <div className="text-right flex-1 min-w-0">
+          <div className="mb-1 flex items-center gap-1.5" style={{ color: COLORS.inkLight, fontSize: '11px', letterSpacing: '0.02em' }}>
+            <span>{formatHebDate(viewedDate)}</span>
+            {!isViewingToday && (
+              <button onClick={goToToday}
+                className="rounded-full px-2 py-0.5 transition-all active:scale-95 hover:opacity-80"
+                style={{ background: COLORS.momentTint, color: COLORS.moment, fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                ↺ חזרה להיום
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <h1 className="font-bold tracking-tight" style={{ color: COLORS.ink, fontSize: '28px', lineHeight: 1.1 }}>
+              {dayLabel}
+            </h1>
+            <div className="flex items-center gap-0.5">
+              {!isViewingToday && (
+                <button onClick={goPrevDay}
+                  className="rounded-full p-1 transition-all active:scale-90 hover:opacity-70"
+                  style={{ background: 'transparent', color: COLORS.inkLight }}
+                  aria-label="יום קודם">
+                  <ChevronRight size={18} strokeWidth={2.2} />
+                </button>
+              )}
+              <button onClick={goNextDay}
+                className="rounded-full p-1 transition-all active:scale-90 hover:opacity-70"
+                style={{ background: 'transparent', color: COLORS.inkLight }}
+                aria-label="יום הבא">
+                <ChevronLeft size={18} strokeWidth={2.2} />
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {chains && chains.length > 0 && onOpenChains && (
+            <button onClick={onOpenChains}
+              className="rounded-full p-2 transition-all active:scale-95 hover:opacity-80"
+              style={{ background: 'white', border: `1px solid ${COLORS.border}` }}
+              aria-label="שרשורים">
+              <Link2 size={14} style={{ color: COLORS.inkSoft }} strokeWidth={2.2} />
+            </button>
+          )}
+          <button onClick={onOpenMoments} className="rounded-full p-2.5 transition-all active:scale-95 hover:opacity-80"
+            style={{ background: COLORS.momentTint }} aria-label="רגעים יפים">
+            <Sparkles size={18} style={{ color: COLORS.moment }} />
+          </button>
+        </div>
+      </div>
+
+      {/* Progress / count */}
+      {isViewingToday ? (
+        <div className="mt-7 mb-7">
+          <div className="flex items-center justify-between mb-1.5">
+            <span style={{ color: allDone ? '#5A8B6F' : COLORS.inkLight, fontSize: '11px', fontWeight: 600, letterSpacing: '0.02em' }}>
+              {totalCount === 0 ? 'אין משימות עדיין' : `${completedCount} מתוך ${totalCount}`}
+            </span>
+            <div className="flex items-center gap-2">
+              {futureCount > 0 && (
+                <button onClick={goNextDay}
+                  className="transition-all hover:opacity-70 active:scale-95"
+                  style={{ color: COLORS.inkLight, fontSize: '10.5px', fontWeight: 500 }}>
+                  ✦ {futureCount} מתוכננות →
+                </button>
+              )}
+              {allDone && (
+                <span style={{ color: '#5A8B6F', fontSize: '11px', fontWeight: 600 }}>יום מלא ✓</span>
+              )}
+            </div>
+          </div>
+          <div className="rounded-full overflow-hidden" style={{ background: COLORS.borderSoft, height: '6px' }}>
+            <div className="h-full rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${progress * 100}%`, background: allDone ? '#5A8B6F' : COLORS.ink }} />
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 mb-5 flex items-center justify-between">
+          <span style={{ color: COLORS.inkSoft, fontSize: '12px', fontWeight: 500 }}>
+            {totalCount === 0
+              ? 'אין משימות מתוכננות'
+              : `${totalCount} ${totalCount === 1 ? 'משימה מתוכננת' : 'משימות מתוכננות'}`}
+          </span>
+          {futureCount > 0 && (
+            <span style={{ color: COLORS.inkLight, fontSize: '10.5px' }}>
+              ✦ {futureCount} בהמשך
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Add */}
+      {showAdd ? (
+        <AddTaskForm
+          onAdd={(t, chain) => { onAdd(t, chain); setShowAdd(false); }}
+          onCancel={() => setShowAdd(false)}
+          todayKey={todayKey}
+          defaultDayDate={viewedDayKey}
+          allTasks={tasks}
+          allChains={chains}
+        />
+      ) : (
+        <button onClick={() => setShowAdd(true)}
+          className="w-full mb-3 rounded-2xl py-3.5 px-5 flex items-center justify-center gap-2 transition-all active:scale-[0.99] hover:bg-white"
+          style={{ background: 'transparent', border: `1px dashed ${COLORS.border}`, color: COLORS.inkSoft }}>
+          <Plus size={15} strokeWidth={2.2} />
+          <span style={{ fontSize: '13.5px', fontWeight: 500 }}>
+            {isViewingToday ? 'משימה חדשה' : `משימה ל${dayLabel}`}
+          </span>
+        </button>
+      )}
+
+      {/* Pending tasks section (only on today) */}
+      {isViewingToday && pendingTasks.length > 0 && (
+        <PendingTasksSection pendingTasks={pendingTasks} onMoveToToday={onMoveToToday} onDelete={onDelete} />
+      )}
+
+      {sortedTasks.length === 0 && !showAdd && pendingTasks.length === 0 && (
+        <div className="text-center py-10">
+          <p style={{ color: COLORS.inkLight, fontSize: '13px' }}>
+            {isViewingToday ? 'עוד אין משימות להיום' : `אין משימות מתוכננות ל${dayLabel}`}
+          </p>
+          <p className="mt-1" style={{ color: COLORS.inkVeryLight, fontSize: '11.5px' }}>
+            {isViewingToday ? 'הקלף הראשון מתחיל כאן' : 'הוסיפי משימה כדי לתכנן'}
+          </p>
+        </div>
+      )}
+
+      {/* Today's tasks divider (only when both sections exist) */}
+      {isViewingToday && sortedTasks.length > 0 && pendingTasks.length > 0 && (
+        <div className="flex items-center gap-2 mt-5 mb-2.5" style={{ paddingRight: '4px' }}>
+          <h3 style={{ color: COLORS.inkLight, fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.06em' }}>
+            של היום
+          </h3>
+          <div className="flex-1" style={{ height: '1px', background: COLORS.borderSoft }} />
+        </div>
+      )}
+
+      <div className="space-y-2.5">
+        {sortedTasks.map((task) => (
+          <TaskCard key={task.id} task={task}
+            onUpdate={onUpdate} onDelete={onDelete}
+            onMoveToTomorrow={onMoveToTomorrow}
+            onDuplicateToTomorrow={onDuplicateToTomorrow}
+            onDeleteChainGroup={onDeleteChainGroup} />
+        ))}
+      </div>
+
+      {/* Reset (testing) - subtle at the bottom */}
+      {onReset && (
+        <div className="mt-10 mb-4 text-center">
+          {confirmingReset ? (
+            <div className="inline-flex items-center gap-2 rounded-full px-3 py-1.5"
+              style={{ background: 'white', border: `1px solid ${COLORS.cnf}` }}>
+              <span style={{ color: COLORS.cnf, fontSize: '11px', fontWeight: 600 }}>
+                למחוק הכל?
+              </span>
+              <button onClick={() => {
+                  onReset();
+                  setConfirmingReset(false);
+                  setDayOffset(0);
+                }}
+                className="rounded-full px-2 py-0.5 transition-all active:scale-95"
+                style={{ background: COLORS.cnf, color: 'white', fontSize: '10.5px', fontWeight: 700 }}>
+                כן, מחקי
+              </button>
+              <button onClick={() => setConfirmingReset(false)}
+                className="rounded-full px-2 py-0.5 transition-all active:scale-95"
+                style={{ background: COLORS.borderSoft, color: COLORS.inkSoft, fontSize: '10.5px', fontWeight: 600 }}>
+                ביטול
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmingReset(true)}
+              className="transition-all hover:opacity-100 active:scale-95"
+              style={{ color: COLORS.inkVeryLight, fontSize: '10.5px', fontWeight: 500, opacity: 0.7, letterSpacing: '0.04em' }}>
+              איפוס נתונים (לבדיקה)
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Bottom nav */}
+      <div className="fixed bottom-0 left-0 right-0 pb-5 pt-6 pointer-events-none"
+        style={{ background: `linear-gradient(to top, ${COLORS.bg} 60%, ${COLORS.bg}00)` }}>
+        <div className="max-w-md mx-auto px-5 flex gap-2 pointer-events-auto">
+          <button onClick={onOpenDaily}
+            className="flex-1 rounded-2xl py-3 px-4 flex items-center justify-center gap-2 transition-all active:scale-[0.98] hover:shadow-sm"
+            style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+            <BarChart3 size={14} style={{ color: COLORS.inkSoft }} />
+            <span style={{ color: COLORS.ink, fontSize: '13px', fontWeight: 600 }}>סיכום יומי</span>
+          </button>
+          <button onClick={onOpenWeekly}
+            className="flex-1 rounded-2xl py-3 px-4 flex items-center justify-center gap-2 transition-all active:scale-[0.98] hover:shadow-sm"
+            style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+            <TrendingUp size={14} style={{ color: COLORS.inkSoft }} />
+            <span style={{ color: COLORS.ink, fontSize: '13px', fontWeight: 600 }}>סיכום שבועי</span>
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// PENDING TASKS SECTION
+// ============================================
+
+function PendingTasksSection({ pendingTasks, onMoveToToday, onDelete }) {
+  return (
+    <>
+      {/* Section header */}
+      <div className="flex items-center gap-2 mb-2.5 mt-1" style={{ paddingRight: '4px' }}>
+        <RotateCw size={11} style={{ color: COLORS.moment }} strokeWidth={2.5} />
+        <h3 style={{ color: COLORS.moment, fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.06em' }}>
+          משימות לא גמורות ({pendingTasks.length})
+        </h3>
+        <div className="flex-1" style={{ height: '1px', background: COLORS.borderSoft }} />
+      </div>
+
+      {/* Cards - same style as TaskCard */}
+      <div className="space-y-2.5 mb-1">
+        {pendingTasks.map((task) => {
+          const cat = getCategoryColor(task.category);
+          const isWater = isWaterCategory(task.category);
+          const fromDate = formatHebShort(dayKeyFromString(task.dayDate));
+          return (
+            <div key={task.id}
+              className="rounded-2xl px-4 py-3 transition-all"
+              style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+              <div className="flex-1 min-w-0">
+                <div style={{ color: COLORS.ink, fontSize: '13.5px', fontWeight: 500, lineHeight: 1.3 }}>
+                  {task.text}
+                </div>
+                <div className="mt-0.5 flex items-center gap-1.5" style={{ fontSize: '10.5px' }}>
+                  {isWater && <Droplet size={9} fill={cat.color} strokeWidth={0} />}
+                  <span style={{ color: cat.color, fontWeight: 600 }}>{task.category}</span>
+                  <span style={{ color: COLORS.inkVeryLight }}>·</span>
+                  <span style={{ color: COLORS.moment, fontWeight: 600 }}>מ-{fromDate}</span>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-3 mt-2.5">
+                <button onClick={() => onMoveToToday(task.id)}
+                  className="flex items-center gap-1 rounded-full px-3 py-1 transition-all active:scale-95"
+                  style={{ background: COLORS.ink, color: 'white', fontSize: '11px', fontWeight: 600 }}
+                  aria-label="קבל">
+                  <Check size={11} strokeWidth={3} />קבל להיום
+                </button>
+                <button onClick={() => onDelete(task.id)}
+                  className="flex items-center gap-1 transition-all hover:opacity-100 active:scale-95 mr-auto"
+                  style={{ color: COLORS.inkLight, fontSize: '11px', fontWeight: 500, opacity: 0.8 }}
+                  aria-label="מחק">
+                  <X size={11} strokeWidth={2.5} /><span>מחק</span>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// CHAIN LINK INPUT (sub-component)
+// ============================================
+
+function ChainLinkInput({ link, onChange, onRemove, allTasks }) {
+  const cat = link.category.trim() ? getCategoryColor(link.category.trim()) : null;
+  return (
+    <div className="rounded-lg px-2.5 py-2" style={{ background: 'white' }}>
+      <div className="flex items-center gap-1.5">
+        <input type="text" value={link.text}
+          onChange={(e) => onChange({ text: e.target.value })}
+          placeholder="פעולה (למשל קיפול וסידור)"
+          className="flex-1 outline-none bg-transparent py-0.5"
+          style={{ color: COLORS.ink, fontSize: '12.5px', fontFamily: FONT, fontWeight: 500,
+            borderBottom: `1px solid ${COLORS.borderSoft}` }} />
+        <button onClick={onRemove}
+          className="rounded transition-all hover:opacity-80 active:scale-90"
+          style={{ color: COLORS.inkLight, padding: '2px' }}
+          aria-label="הסר">
+          <X size={13} strokeWidth={2.2} />
+        </button>
+      </div>
+      <div className="flex items-center gap-1.5 mt-1.5">
+        {cat && (
+          <div className="rounded-full flex items-center justify-center flex-shrink-0"
+            style={{ background: cat.tint, width: '16px', height: '16px',
+              color: cat.color, fontSize: '9px', fontWeight: 700 }}>
+            {isWaterCategory(link.category) ? <Droplet size={8} fill={cat.color} strokeWidth={0} /> : firstLetter(link.category)}
+          </div>
+        )}
+        <input type="text" value={link.category}
+          onChange={(e) => onChange({ category: e.target.value })}
+          placeholder="קטגוריה"
+          className="flex-1 outline-none bg-transparent py-0.5"
+          style={{ color: COLORS.inkSoft, fontSize: '11.5px', fontFamily: FONT, fontWeight: 500,
+            borderBottom: `1px solid ${COLORS.borderSoft}` }} />
+      </div>
+      <div className="flex items-center gap-1 mt-1.5">
+        {[
+          { offset: 0, label: 'אותו יום' },
+          { offset: 1, label: 'מחר' },
+          { offset: 2, label: '+יומיים' },
+          { offset: 3, label: '+3' },
+        ].map((opt) => {
+          const active = (link.dayOffset || 0) === opt.offset;
+          return (
+            <button key={opt.offset}
+              onClick={() => onChange({ dayOffset: opt.offset })}
+              className="rounded-full px-2 py-0.5 transition-all"
+              style={{ background: active ? COLORS.ink : 'transparent',
+                color: active ? 'white' : COLORS.inkSoft,
+                border: `1px solid ${active ? COLORS.ink : COLORS.border}`,
+                fontSize: '10px', fontWeight: active ? 600 : 500 }}>
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// ADD TASK FORM
+// ============================================
+
+function AddTaskForm({ onAdd, onCancel, todayKey, defaultDayDate, allTasks, allChains }) {
+  const [text, setText] = useState('');
+  const [category, setCategory] = useState('');
+  const [isBonus, setIsBonus] = useState(false);
+
+  // Chain-related state
+  const [chainLinks, setChainLinks] = useState([]); // [{text, category, dayOffset}]
+
+  // Compute initial date mode based on defaultDayDate (which day the user is viewing)
+  const tomorrowKey = useMemo(() => {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    return getDayKey(t);
+  }, []);
+
+  const initialDateMode = useMemo(() => {
+    const d = defaultDayDate || todayKey;
+    if (d === todayKey) return 'today';
+    if (d === tomorrowKey) return 'tomorrow';
+    return 'custom';
+  }, [defaultDayDate, todayKey, tomorrowKey]);
+
+  const [dateMode, setDateMode] = useState(initialDateMode);
+  const [customDate, setCustomDate] = useState(
+    initialDateMode === 'custom' ? defaultDayDate : ''
+  );
+  const [activeField, setActiveField] = useState('text');
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
+  const textRef = useRef(null);
+  const categoryRef = useRef(null);
+
+  useEffect(() => { textRef.current?.focus(); }, []);
+
+  const textSuggestions = useMemo(() => {
+    const map = new Map();
+    for (const t of allTasks) {
+      const key = (t.text || '').trim();
+      if (!key) continue;
+      const ex = map.get(key);
+      if (ex) {
+        ex.count++;
+        if (t.createdAt > ex.lastUsed) { ex.lastUsed = t.createdAt; ex.category = t.category; }
+      } else {
+        map.set(key, { count: 1, lastUsed: t.createdAt, category: t.category, text: key });
+      }
+    }
+    const all = Array.from(map.values());
+    const q = text.trim().toLowerCase();
+    if (!q) return all.sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed).slice(0, 4);
+    const matches = all.filter((s) => s.text.toLowerCase().includes(q));
+    matches.sort((a, b) => {
+      const aPre = a.text.toLowerCase().startsWith(q);
+      const bPre = b.text.toLowerCase().startsWith(q);
+      if (aPre !== bPre) return aPre ? -1 : 1;
+      if (b.count !== a.count) return b.count - a.count;
+      return b.lastUsed - a.lastUsed;
+    });
+    return matches.filter((m) => m.text.toLowerCase() !== q).slice(0, 5);
+  }, [text, allTasks]);
+
+  const categorySuggestions = useMemo(() => {
+    const map = new Map();
+    for (const t of allTasks) {
+      const key = (t.category || '').trim();
+      if (!key) continue;
+      const ex = map.get(key);
+      if (ex) { ex.count++; if (t.createdAt > ex.lastUsed) ex.lastUsed = t.createdAt; }
+      else { map.set(key, { count: 1, lastUsed: t.createdAt, text: key }); }
+    }
+    const all = Array.from(map.values());
+    const q = category.trim().toLowerCase();
+    if (!q) return all.sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed).slice(0, 6);
+    const matches = all.filter((s) => s.text.toLowerCase().includes(q));
+    matches.sort((a, b) => {
+      const aPre = a.text.toLowerCase().startsWith(q);
+      const bPre = b.text.toLowerCase().startsWith(q);
+      if (aPre !== bPre) return aPre ? -1 : 1;
+      if (b.count !== a.count) return b.count - a.count;
+      return b.lastUsed - a.lastUsed;
+    });
+    return matches.filter((m) => m.text.toLowerCase() !== q).slice(0, 6);
+  }, [category, allTasks]);
+
+  useEffect(() => { setHighlightIdx(-1); }, [text, category, activeField]);
+
+  const pickTextSuggestion = (s) => {
+    setText(s.text);
+    if (s.category && !category) setCategory(s.category);
+    setShowSuggestions(false);
+    setTimeout(() => {
+      if (!category && !s.category) categoryRef.current?.focus();
+      else textRef.current?.focus();
+    }, 0);
+  };
+
+  const pickCategorySuggestion = (s) => {
+    setCategory(s.text);
+    setShowSuggestions(false);
+    setTimeout(() => categoryRef.current?.focus(), 0);
+  };
+
+  const computeDayDate = () => {
+    if (dateMode === 'today') return todayKey;
+    if (dateMode === 'tomorrow') {
+      const t = new Date();
+      t.setDate(t.getDate() + 1);
+      return getDayKey(t);
+    }
+    return customDate || todayKey;
+  };
+
+  const submit = () => {
+    if (!text.trim() || !category.trim()) return;
+    const cleanCategory = category.trim();
+    const isWater = isWaterCategory(cleanCategory);
+    const dayDate = computeDayDate();
+    const isPastOrToday = dayDate <= todayKey;
+    const task = {
+      id: uid(),
+      category: cleanCategory,
+      text: text.trim(),
+      urgency: 'm',
+      completed: isBonus && isPastOrToday,
+      isBonus: isBonus && isPastOrToday,
+      dayDate,
+      createdAt: Date.now(),
+      completedAt: isBonus && isPastOrToday ? Date.now() : null,
+      ...(isWater ? { waterCups: isBonus && isPastOrToday ? WATER_GOAL : 0 } : {}),
+    };
+
+    // If user added new chain links, build a chain rule
+    const validLinks = chainLinks.filter((l) => l.text.trim() && l.category.trim());
+    if (validLinks.length > 0) {
+      const newChain = {
+        id: uid(),
+        links: validLinks.map((l) => ({
+          text: l.text.trim(),
+          category: l.category.trim(),
+          dayOffset: l.dayOffset || 0,
+        })),
+      };
+      onAdd(task, newChain);
+    } else {
+      onAdd(task);
+    }
+  };
+
+  // Detect if this text already triggers an existing chain
+  const matchedChain = useMemo(() => {
+    if (!text.trim() || !allChains) return null;
+    return allChains.find(
+      (c) => c.enabled !== false && c.triggerText.trim() === text.trim() && (chainLinks.length === 0)
+    );
+  }, [text, allChains, chainLinks.length]);
+
+  const addChainLink = () => {
+    setChainLinks((prev) => [...prev, { text: '', category: '', dayOffset: 1 }]);
+  };
+  const updateChainLink = (idx, updates) => {
+    setChainLinks((prev) => prev.map((l, i) => (i === idx ? { ...l, ...updates } : l)));
+  };
+  const removeChainLink = (idx) => {
+    setChainLinks((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const canSubmit = text.trim() && category.trim();
+  const tomorrowLabel = useMemo(() => {
+    const t = new Date(); t.setDate(t.getDate() + 1);
+    return formatHebShort(t);
+  }, []);
+  const minCustomDate = todayKey;
+  const currentCatColor = category.trim() ? getCategoryColor(category.trim()) : null;
+
+  const handleKeyDown = (e, field) => {
+    const sugs = field === 'text' ? textSuggestions : categorySuggestions;
+    if (e.key === 'ArrowDown' && sugs.length > 0) {
+      e.preventDefault(); setHighlightIdx((i) => Math.min(i + 1, sugs.length - 1));
+    } else if (e.key === 'ArrowUp' && sugs.length > 0) {
+      e.preventDefault(); setHighlightIdx((i) => Math.max(i - 1, -1));
+    } else if (e.key === 'Enter') {
+      if (highlightIdx >= 0 && sugs[highlightIdx]) {
+        if (field === 'text') pickTextSuggestion(sugs[highlightIdx]);
+        else pickCategorySuggestion(sugs[highlightIdx]);
+      } else if (field === 'text' && text.trim() && !category.trim()) {
+        e.preventDefault(); categoryRef.current?.focus();
+      } else { submit(); }
+    } else if (e.key === 'Escape') {
+      if (showSuggestions && sugs.length > 0) setShowSuggestions(false);
+      else onCancel();
+    }
+  };
+
+  return (
+    <div className="rounded-2xl p-4 mb-3 relative"
+      style={{ background: 'white', border: `1px solid ${COLORS.border}`, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+      {/* Task name */}
+      <div className="relative">
+        <input ref={textRef} type="text" value={text}
+          onChange={(e) => { setText(e.target.value); setShowSuggestions(true); }}
+          onFocus={() => { setActiveField('text'); setShowSuggestions(true); }}
+          onKeyDown={(e) => handleKeyDown(e, 'text')}
+          placeholder="מה רוצים להוסיף?"
+          className="w-full outline-none bg-transparent py-1.5 px-1"
+          style={{ color: COLORS.ink, borderBottom: `1.5px solid ${COLORS.border}`,
+            fontSize: '15.5px', fontFamily: FONT, fontWeight: 500 }} />
+
+        {activeField === 'text' && showSuggestions && textSuggestions.length > 0 && (
+          <div className="absolute left-0 right-0 mt-1.5 rounded-xl overflow-hidden z-20"
+            style={{ background: 'white', border: `1px solid ${COLORS.border}`, boxShadow: '0 8px 24px rgba(0,0,0,0.08)' }}>
+            {!text.trim() && (
+              <div className="px-3 pt-2.5 pb-1"
+                style={{ color: COLORS.inkLight, fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                שימושים תכופים
+              </div>
+            )}
+            {textSuggestions.map((s, i) => {
+              const cat = getCategoryColor(s.category);
+              const isWater = isWaterCategory(s.category);
+              return (
+                <button key={s.text}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pickTextSuggestion(s)}
+                  onMouseEnter={() => setHighlightIdx(i)}
+                  className="w-full text-right px-3 py-2.5 flex items-center gap-2.5 transition-all"
+                  style={{ background: highlightIdx === i ? COLORS.bg : 'transparent',
+                    borderTop: i > 0 ? `1px solid ${COLORS.borderSoft}` : 'none' }}>
+                  <div className="rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ background: cat.tint, width: '22px', height: '22px',
+                      color: cat.color, fontSize: '11px', fontWeight: 700 }}>
+                    {isWater ? <Droplet size={10} fill={cat.color} strokeWidth={0} /> : firstLetter(s.category)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate" style={{ color: COLORS.ink, fontSize: '13.5px', fontWeight: 500 }}>
+                      {s.text}
+                    </div>
+                    <div style={{ color: COLORS.inkLight, fontSize: '10.5px' }}>{s.category}</div>
+                  </div>
+                  {s.count > 1 && (
+                    <span className="rounded-full px-1.5 flex-shrink-0"
+                      style={{ background: COLORS.borderSoft, color: COLORS.inkSoft,
+                        fontSize: '10px', fontWeight: 700, height: '16px', lineHeight: '16px' }}>
+                      ×{s.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Date pills */}
+      <div className="flex items-center gap-1.5 mt-3.5">
+        <Clock size={11} style={{ color: COLORS.inkLight }} />
+        <button onClick={() => setDateMode('today')}
+          className="px-2.5 py-1 rounded-full transition-all"
+          style={{ background: dateMode === 'today' ? COLORS.ink : 'transparent',
+            color: dateMode === 'today' ? 'white' : COLORS.inkSoft,
+            border: `1px solid ${dateMode === 'today' ? COLORS.ink : COLORS.border}`,
+            fontWeight: dateMode === 'today' ? 600 : 500, fontSize: '11.5px' }}>
+          היום
+        </button>
+        <button onClick={() => setDateMode('tomorrow')}
+          className="px-2.5 py-1 rounded-full transition-all"
+          style={{ background: dateMode === 'tomorrow' ? COLORS.ink : 'transparent',
+            color: dateMode === 'tomorrow' ? 'white' : COLORS.inkSoft,
+            border: `1px solid ${dateMode === 'tomorrow' ? COLORS.ink : COLORS.border}`,
+            fontWeight: dateMode === 'tomorrow' ? 600 : 500, fontSize: '11.5px' }}>
+          מחר
+        </button>
+        <label className="px-2.5 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1"
+          style={{ background: dateMode === 'custom' ? COLORS.ink : 'transparent',
+            color: dateMode === 'custom' ? 'white' : COLORS.inkSoft,
+            border: `1px solid ${dateMode === 'custom' ? COLORS.ink : COLORS.border}`,
+            fontWeight: dateMode === 'custom' ? 600 : 500, fontSize: '11.5px' }}>
+          <Calendar size={10} />
+          <input type="date" min={minCustomDate} value={customDate}
+            onChange={(e) => { setCustomDate(e.target.value); setDateMode('custom'); }}
+            className="bg-transparent outline-none border-none"
+            style={{ fontSize: '11.5px', color: 'inherit', width: customDate ? 'auto' : '60px', fontFamily: FONT }} />
+        </label>
+      </div>
+
+      {/* Category */}
+      <div className="relative mt-3.5">
+        <div className="flex items-center gap-2">
+          <div className="rounded-full flex items-center justify-center flex-shrink-0"
+            style={{ background: currentCatColor ? currentCatColor.tint : COLORS.borderSoft,
+              width: '24px', height: '24px',
+              color: currentCatColor ? currentCatColor.color : COLORS.inkLight,
+              fontSize: '11px', fontWeight: 700 }}>
+            {category.trim() ? (
+              isWaterCategory(category)
+                ? <Droplet size={11} fill={currentCatColor.color} strokeWidth={0} />
+                : firstLetter(category)
+            ) : <Tag size={11} strokeWidth={2.2} />}
+          </div>
+          <input ref={categoryRef} type="text" value={category}
+            onChange={(e) => { setCategory(e.target.value); setShowSuggestions(true); }}
+            onFocus={() => { setActiveField('category'); setShowSuggestions(true); }}
+            onKeyDown={(e) => handleKeyDown(e, 'category')}
+            placeholder="קטגוריה - למשל ספורט, כביסה, מים..."
+            className="flex-1 outline-none bg-transparent py-1 px-1"
+            style={{ color: COLORS.ink, borderBottom: `1px solid ${COLORS.borderSoft}`,
+              fontSize: '13.5px', fontFamily: FONT, fontWeight: 500 }} />
+        </div>
+
+        {activeField === 'category' && showSuggestions && categorySuggestions.length > 0 && (
+          <div className="absolute left-0 right-0 mt-1.5 rounded-xl overflow-hidden z-20"
+            style={{ background: 'white', border: `1px solid ${COLORS.border}`, boxShadow: '0 8px 24px rgba(0,0,0,0.08)' }}>
+            {!category.trim() && (
+              <div className="px-3 pt-2.5 pb-1"
+                style={{ color: COLORS.inkLight, fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                קטגוריות שלך
+              </div>
+            )}
+            {categorySuggestions.map((s, i) => {
+              const cat = getCategoryColor(s.text);
+              const isWater = isWaterCategory(s.text);
+              return (
+                <button key={s.text}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pickCategorySuggestion(s)}
+                  onMouseEnter={() => setHighlightIdx(i)}
+                  className="w-full text-right px-3 py-2.5 flex items-center gap-2.5 transition-all"
+                  style={{ background: highlightIdx === i ? COLORS.bg : 'transparent',
+                    borderTop: i > 0 ? `1px solid ${COLORS.borderSoft}` : 'none' }}>
+                  <div className="rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ background: cat.tint, width: '22px', height: '22px',
+                      color: cat.color, fontSize: '11px', fontWeight: 700 }}>
+                    {isWater ? <Droplet size={10} fill={cat.color} strokeWidth={0} /> : firstLetter(s.text)}
+                  </div>
+                  <div className="flex-1 min-w-0 text-right">
+                    <div className="truncate" style={{ color: COLORS.ink, fontSize: '13.5px', fontWeight: 500 }}>
+                      {s.text}
+                    </div>
+                  </div>
+                  {s.count > 1 && (
+                    <span className="rounded-full px-1.5 flex-shrink-0"
+                      style={{ background: COLORS.borderSoft, color: COLORS.inkSoft,
+                        fontSize: '10px', fontWeight: 700, height: '16px', lineHeight: '16px' }}>
+                      ×{s.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Chain - matched existing chain notification */}
+      {matchedChain && (
+        <div className="mt-3 rounded-xl px-3 py-2 flex items-start gap-2"
+          style={{ background: '#F5EBE3', border: `1px solid #E8D5C7` }}>
+          <Link2 size={12} style={{ color: '#8B5A3C', marginTop: '2px' }} strokeWidth={2.5} />
+          <div className="flex-1 min-w-0">
+            <div style={{ color: '#8B5A3C', fontSize: '11px', fontWeight: 700, letterSpacing: '0.02em' }}>
+              שרשור פעיל
+            </div>
+            <div className="mt-0.5" style={{ color: COLORS.inkSoft, fontSize: '11.5px', lineHeight: 1.4 }}>
+              {matchedChain.links.map((l, i) => {
+                const offsetLabel = l.dayOffset === 0 ? 'אותו יום' : l.dayOffset === 1 ? 'מחר' : `+${l.dayOffset} ימים`;
+                return (
+                  <div key={i}>
+                    ← {l.text} <span style={{ color: COLORS.inkLight }}>({offsetLabel})</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chain - existing links being added */}
+      {chainLinks.length > 0 && (
+        <div className="mt-3.5 rounded-xl p-3" style={{ background: COLORS.borderSoft }}>
+          <div className="flex items-center gap-1.5 mb-2.5">
+            <Link2 size={12} style={{ color: COLORS.inkSoft }} strokeWidth={2.5} />
+            <span style={{ color: COLORS.inkSoft, fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.04em' }}>
+              שרשרת פעולות
+            </span>
+          </div>
+          <div className="space-y-2">
+            {chainLinks.map((link, idx) => (
+              <ChainLinkInput
+                key={idx}
+                link={link}
+                onChange={(updates) => updateChainLink(idx, updates)}
+                onRemove={() => removeChainLink(idx)}
+                allTasks={allTasks}
+              />
+            ))}
+          </div>
+          <button onClick={addChainLink}
+            className="w-full mt-2 rounded-lg py-1.5 flex items-center justify-center gap-1 transition-all hover:opacity-80 active:scale-95"
+            style={{ background: 'white', color: COLORS.inkSoft, fontSize: '11px', fontWeight: 600,
+              border: `1px dashed ${COLORS.border}` }}>
+            <Plus size={11} strokeWidth={2.5} />עוד פעולה
+          </button>
+        </div>
+      )}
+
+      {/* Add chain button - shown when text + category but no links yet */}
+      {chainLinks.length === 0 && !matchedChain && text.trim() && category.trim() && (
+        <button onClick={addChainLink}
+          className="mt-3 transition-all hover:opacity-80 active:scale-95 flex items-center gap-1.5"
+          style={{ color: COLORS.inkLight, fontSize: '11px', fontWeight: 500 }}>
+          <Link2 size={11} strokeWidth={2.2} />
+          <span>+ שרשר משימה נוספת</span>
+        </button>
+      )}
+
+      {/* Footer */}
+      <div className="flex items-center justify-between mt-4">
+        {dateMode === 'today' ? (
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={isBonus} onChange={(e) => setIsBonus(e.target.checked)} className="sr-only" />
+            <div className="rounded flex items-center justify-center transition-all"
+              style={{ width: '16px', height: '16px',
+                background: isBonus ? COLORS.moment : 'transparent',
+                border: `1.5px solid ${isBonus ? COLORS.moment : COLORS.border}` }}>
+              {isBonus && <Check size={10} strokeWidth={3.5} color="white" />}
+            </div>
+            <span style={{ color: isBonus ? COLORS.moment : COLORS.inkSoft,
+              fontSize: '12px', fontWeight: isBonus ? 600 : 500 }}>
+              ✦ כבר עשיתי (בונוס)
+            </span>
+          </label>
+        ) : (
+          <span style={{ color: COLORS.inkLight, fontSize: '11.5px' }}>
+            {dateMode === 'tomorrow' ? `נשמר ל${tomorrowLabel}` : 'משימה עתידית'}
+          </span>
+        )}
+
+        <div className="flex items-center gap-1.5">
+          <button onClick={onCancel} className="p-2 rounded-lg transition-all hover:opacity-70"
+            style={{ color: COLORS.inkLight }} aria-label="ביטול">
+            <X size={16} />
+          </button>
+          <button onClick={submit} disabled={!canSubmit}
+            className="p-2 rounded-lg transition-all"
+            style={{ background: canSubmit ? COLORS.ink : COLORS.borderSoft,
+              color: canSubmit ? 'white' : COLORS.inkLight, opacity: canSubmit ? 1 : 0.6 }}
+            aria-label="שמירה">
+            <Check size={16} strokeWidth={3} />
+          </button>
+        </div>
+      </div>
+
+      {!category.trim() && text.trim() && (
+        <div className="mt-2 text-center" style={{ color: COLORS.inkLight, fontSize: '11px' }}>
+          בחרי או כתבי קטגוריה כדי לסיים
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// TASK CARD
+// ============================================
+
+function TaskCard({ task, onUpdate, onDelete, onMoveToTomorrow, onDuplicateToTomorrow, onDeleteChainGroup }) {
+  const [showUrgencyControls, setShowUrgencyControls] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(task.text);
+  const [deleteState, setDeleteState] = useState('idle'); // idle | confirming
+  const editInputRef = useRef(null);
+  const cat = getCategoryColor(task.category);
+  const isWater = isWaterCategory(task.category);
+  const isComplete = isTaskComplete(task);
+  const inChain = !!task.chainGroupId;
+
+  useEffect(() => {
+    if (isEditing) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }
+  }, [isEditing]);
+
+  useEffect(() => { setEditText(task.text); }, [task.text]);
+
+  const saveEdit = () => {
+    const trimmed = editText.trim();
+    if (trimmed && trimmed !== task.text) onUpdate(task.id, { text: trimmed });
+    else setEditText(task.text);
+    setIsEditing(false);
+  };
+  const cancelEdit = () => { setEditText(task.text); setIsEditing(false); };
+  const cycleUrgency = (delta) => {
+    const idx = urgencyRank(task.urgency);
+    const newIdx = Math.max(0, Math.min(URGENCY_ORDER.length - 1, idx - delta));
+    onUpdate(task.id, { urgency: URGENCY_ORDER[newIdx] });
+  };
+  const toggleComplete = () => {
+    const newCompleted = !task.completed;
+    onUpdate(task.id, { completed: newCompleted, completedAt: newCompleted ? Date.now() : null });
+  };
+
+  return (
+    <div className="rounded-2xl px-4 py-3 transition-all"
+      style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+      <div className="flex items-center gap-3">
+        {/* Text */}
+        <div className="flex-1 min-w-0">
+          <div className="leading-snug flex items-center gap-1.5 flex-wrap"
+            style={{ textDecoration: isComplete && !isEditing ? 'line-through' : 'none',
+              color: isComplete && !isEditing ? COLORS.inkLight : COLORS.ink,
+              fontWeight: 500, fontSize: '13.5px' }}>
+            {isEditing ? (
+              <input ref={editInputRef} type="text" value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onBlur={saveEdit}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
+                className="flex-1 outline-none bg-transparent"
+                style={{ color: COLORS.ink, borderBottom: `1.5px solid ${cat.color}`,
+                  fontSize: '13.5px', fontFamily: FONT, fontWeight: 500,
+                  padding: '0 0 2px 0', minWidth: 0 }} />
+            ) : (
+              <span onClick={() => setIsEditing(true)} className="cursor-text" style={{ wordBreak: 'break-word' }}>
+                {task.text}
+              </span>
+            )}
+            {task.isBonus && !isEditing && (
+              <span className="px-1.5 rounded inline-flex items-center"
+                style={{ background: COLORS.momentTint, color: COLORS.moment,
+                  fontSize: '9.5px', fontWeight: 700, height: '15px', letterSpacing: '0.03em' }}>
+                ✦ בונוס
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1"
+            style={{ fontSize: '10.5px', opacity: isComplete ? 0.7 : 1 }}>
+            {isWater && <Droplet size={9} fill={cat.color} strokeWidth={0} />}
+            <span style={{ color: cat.color, fontWeight: 600 }}>{task.category}</span>
+            {inChain && (
+              <Link2 size={9} style={{ color: COLORS.inkLight }} strokeWidth={2.5} aria-label="חלק משרשור" />
+            )}
+          </div>
+        </div>
+
+        {/* Urgency */}
+        {!isWater && !task.isBonus && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {showUrgencyControls && (
+              <button onClick={() => cycleUrgency(-1)}
+                className="rounded transition-all active:scale-90"
+                style={{ background: COLORS.borderSoft, color: COLORS.inkSoft,
+                  width: '20px', height: '20px', fontSize: '13px', fontWeight: 700, lineHeight: 1 }}>
+                −
+              </button>
+            )}
+            <button onClick={() => setShowUrgencyControls((v) => !v)}
+              className="rounded transition-all"
+              style={{ background: URGENCY_COLORS[task.urgency], color: 'white',
+                fontSize: '9.5px', fontWeight: 700, minWidth: '28px', height: '20px',
+                opacity: isComplete ? 0.4 : 1, letterSpacing: '0.04em' }}>
+              {URGENCY_LABELS[task.urgency]}
+            </button>
+            {showUrgencyControls && (
+              <button onClick={() => cycleUrgency(1)}
+                className="rounded transition-all active:scale-90"
+                style={{ background: COLORS.borderSoft, color: COLORS.inkSoft,
+                  width: '20px', height: '20px', fontSize: '13px', fontWeight: 700, lineHeight: 1 }}>
+                +
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Water counter */}
+        {isWater && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button onClick={() => {
+                const cups = task.waterCups || 0;
+                if (cups <= 0) return;
+                onUpdate(task.id, { waterCups: cups - 1, completedAt: null });
+              }}
+              disabled={(task.waterCups || 0) === 0}
+              className="rounded transition-all active:scale-90"
+              style={{ background: COLORS.borderSoft, color: COLORS.inkSoft,
+                width: '22px', height: '22px', fontSize: '14px', fontWeight: 700, lineHeight: 1,
+                opacity: (task.waterCups || 0) === 0 ? 0.35 : 1 }}>
+              −
+            </button>
+            <div className="rounded flex items-center gap-1 px-2"
+              style={{ background: isComplete ? cat.color
+                  : (task.waterCups || 0) > 0 ? cat.tint : COLORS.borderSoft,
+                color: isComplete ? 'white'
+                  : (task.waterCups || 0) > 0 ? cat.color : COLORS.inkLight,
+                height: '22px', minWidth: '52px', justifyContent: 'center' }}>
+              <Droplet size={10} fill="currentColor" strokeWidth={0} />
+              <span style={{ fontSize: '11.5px', fontWeight: 700, letterSpacing: '0.02em' }}>
+                {task.waterCups || 0}/{WATER_GOAL}
+              </span>
+            </div>
+            <button onClick={() => {
+                const cups = task.waterCups || 0;
+                const newCups = Math.min(cups + 1, WATER_GOAL);
+                onUpdate(task.id, { waterCups: newCups, completedAt: newCups >= WATER_GOAL ? Date.now() : null });
+              }}
+              disabled={(task.waterCups || 0) >= WATER_GOAL}
+              className="rounded transition-all active:scale-90"
+              style={{ background: (task.waterCups || 0) >= WATER_GOAL ? COLORS.borderSoft : cat.color,
+                color: (task.waterCups || 0) >= WATER_GOAL ? COLORS.inkLight : 'white',
+                width: '22px', height: '22px', fontSize: '14px', fontWeight: 700, lineHeight: 1,
+                opacity: (task.waterCups || 0) >= WATER_GOAL ? 0.35 : 1 }}>
+              +
+            </button>
+          </div>
+        )}
+
+        {/* Checkbox */}
+        {!isWater && (
+          <button onClick={toggleComplete}
+            className="rounded-full flex items-center justify-center flex-shrink-0 transition-all active:scale-90"
+            style={{ width: '22px', height: '22px',
+              background: isComplete ? COLORS.ink : 'transparent',
+              border: `1.5px solid ${isComplete ? COLORS.ink : COLORS.border}` }}
+            aria-label={isComplete ? 'בטל סימון' : 'סמן כהושלם'}>
+            {isComplete && <Check size={11} strokeWidth={3.5} color="white" />}
+          </button>
+        )}
+      </div>
+
+      {/* Footer actions - always full opacity, clearly enabled */}
+      <div className="flex items-center gap-3.5 mt-2.5 flex-wrap">
+        {!isComplete && (
+          <button onClick={() => onMoveToTomorrow(task.id)}
+            className="flex items-center gap-1 transition-all hover:opacity-100 active:scale-95"
+            style={{ color: COLORS.inkSoft, fontSize: '11px', fontWeight: 500, opacity: 1 }}>
+            <ArrowLeft size={11} /><span>דחה למחר</span>
+          </button>
+        )}
+        <button onClick={() => onDuplicateToTomorrow(task)}
+          className="flex items-center gap-1 transition-all hover:opacity-100 active:scale-95"
+          style={{ color: COLORS.ink, fontSize: '11px', fontWeight: 600, opacity: 1 }}>
+          <CopyPlus size={11} strokeWidth={2.2} /><span>שכפל למחר</span>
+        </button>
+        {!isEditing && (
+          <button onClick={() => setIsEditing(true)}
+            className="flex items-center gap-1 transition-all hover:opacity-100 active:scale-95"
+            style={{ color: COLORS.inkSoft, fontSize: '11px', fontWeight: 500, opacity: 1 }}
+            aria-label="עריכה">
+            <Pencil size={11} /><span>ערוך</span>
+          </button>
+        )}
+        {deleteState === 'idle' ? (
+          <button onClick={() => setDeleteState('confirming')}
+            className="flex items-center transition-all hover:opacity-100 active:scale-95 mr-auto"
+            style={{ color: COLORS.inkLight, opacity: 0.7 }}
+            aria-label="מחק">
+            <Trash2 size={11} />
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5 mr-auto">
+            <button onClick={() => { onDelete(task.id); setDeleteState('idle'); }}
+              className="rounded-full px-2 py-0.5 transition-all active:scale-95"
+              style={{ background: COLORS.cnf, color: 'white', fontSize: '10px', fontWeight: 700 }}>
+              {inChain ? 'רק זו' : 'מחק'}
+            </button>
+            {inChain && onDeleteChainGroup && (
+              <button onClick={() => { onDeleteChainGroup(task.chainGroupId); setDeleteState('idle'); }}
+                className="rounded-full px-2 py-0.5 transition-all active:scale-95 flex items-center gap-1"
+                style={{ background: COLORS.cnf, color: 'white', fontSize: '10px', fontWeight: 700 }}>
+                <Link2 size={9} strokeWidth={2.5} />כל השרשור
+              </button>
+            )}
+            <button onClick={() => setDeleteState('idle')}
+              className="rounded-full px-2 py-0.5 transition-all active:scale-95"
+              style={{ background: COLORS.borderSoft, color: COLORS.inkSoft, fontSize: '10px', fontWeight: 600 }}>
+              ביטול
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// CHAINS VIEW
+// ============================================
+
+function ChainsView({ chains, onUpdate, onDelete, onToggle, onBack }) {
+  const sortedChains = useMemo(
+    () => [...chains].sort((a, b) => b.createdAt - a.createdAt),
+    [chains]
+  );
+
+  const offsetLabel = (offset) => {
+    if (offset === 0) return 'אותו יום';
+    if (offset === 1) return 'מחר';
+    if (offset === 2) return 'מחרתיים';
+    return `+${offset} ימים`;
+  };
+
+  return (
+    <>
+      <div className="flex items-start justify-between mb-1">
+        <div className="text-right">
+          <div className="mb-0.5" style={{ color: COLORS.inkLight, fontSize: '11px' }}>
+            כללי אוטומציה
+          </div>
+          <h1 className="font-bold tracking-tight" style={{ color: COLORS.ink, fontSize: '28px', lineHeight: 1.1 }}>
+            השרשורים שלי
+          </h1>
+        </div>
+        <button onClick={onBack}
+          className="rounded-full p-2.5 transition-all active:scale-95 hover:opacity-80"
+          style={{ background: 'white', border: `1px solid ${COLORS.border}` }}
+          aria-label="חזרה">
+          <ChevronRight size={16} style={{ color: COLORS.inkSoft }} />
+        </button>
+      </div>
+
+      <p className="mt-3 mb-6" style={{ color: COLORS.inkLight, fontSize: '12px', lineHeight: 1.5 }}>
+        כשתוסיפי משימה ששמה תואם לטריגר, יווצרו אוטומטית גם המשימות המשורשרות.
+      </p>
+
+      {sortedChains.length === 0 ? (
+        <div className="text-center py-12">
+          <Link2 size={28} className="mx-auto mb-3" style={{ color: COLORS.inkLight, opacity: 0.5 }} strokeWidth={1.5} />
+          <p style={{ color: COLORS.inkLight, fontSize: '13px' }}>עוד אין שרשורים</p>
+          <p className="mt-1" style={{ color: COLORS.inkVeryLight, fontSize: '11.5px' }}>
+            צרי שרשור מתוך טופס משימה חדשה
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sortedChains.map((chain) => {
+            const triggerCat = getCategoryColor(chain.triggerCategory);
+            const isDisabled = chain.enabled === false;
+            return (
+              <ChainCard key={chain.id} chain={chain} triggerCat={triggerCat} isDisabled={isDisabled}
+                onUpdate={onUpdate} onDelete={onDelete} onToggle={onToggle} offsetLabel={offsetLabel} />
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ChainCard({ chain, triggerCat, isDisabled, onUpdate, onDelete, onToggle, offsetLabel }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="rounded-2xl px-4 py-3.5 transition-all"
+      style={{ background: 'white', border: `1px solid ${COLORS.border}`, opacity: isDisabled ? 0.6 : 1 }}>
+      {/* Trigger */}
+      <div className="flex items-center gap-2">
+        <div className="rounded-full flex items-center justify-center flex-shrink-0"
+          style={{ background: triggerCat.tint, width: '24px', height: '24px',
+            color: triggerCat.color, fontSize: '11px', fontWeight: 700 }}>
+          {isWaterCategory(chain.triggerCategory)
+            ? <Droplet size={11} fill={triggerCat.color} strokeWidth={0} />
+            : firstLetter(chain.triggerCategory)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div style={{ color: COLORS.ink, fontSize: '13.5px', fontWeight: 600 }}>
+            {chain.triggerText}
+          </div>
+          <div style={{ color: triggerCat.color, fontSize: '10.5px', fontWeight: 600 }}>
+            {chain.triggerCategory}
+          </div>
+        </div>
+      </div>
+
+      {/* Links */}
+      <div className="mt-3 mr-7 space-y-1.5">
+        {chain.links.map((link, i) => {
+          const linkCat = getCategoryColor(link.category);
+          return (
+            <div key={i} className="flex items-center gap-2">
+              <Link2 size={10} style={{ color: COLORS.inkLight }} strokeWidth={2.5} />
+              <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                <span style={{ color: COLORS.inkSoft, fontSize: '12px', fontWeight: 500 }}>
+                  {link.text}
+                </span>
+                <span style={{ color: linkCat.color, fontSize: '10px', fontWeight: 600 }}>
+                  · {link.category}
+                </span>
+                <span className="rounded-full px-1.5"
+                  style={{ background: COLORS.borderSoft, color: COLORS.inkLight,
+                    fontSize: '9.5px', fontWeight: 600 }}>
+                  {offsetLabel(link.dayOffset || 0)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center gap-3 mt-3 pt-2.5"
+        style={{ borderTop: `1px solid ${COLORS.borderSoft}` }}>
+        <button onClick={() => onToggle(chain.id)}
+          className="flex items-center gap-1 transition-all hover:opacity-80 active:scale-95"
+          style={{ color: isDisabled ? COLORS.inkLight : '#5A8B6F', fontSize: '11px', fontWeight: 600 }}>
+          {isDisabled ? '○ מבוטל' : '● פעיל'}
+        </button>
+        <div className="flex-1" />
+        {confirming ? (
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => { onDelete(chain.id); setConfirming(false); }}
+              className="rounded-full px-2 py-0.5 transition-all active:scale-95"
+              style={{ background: COLORS.cnf, color: 'white', fontSize: '10px', fontWeight: 700 }}>
+              למחוק
+            </button>
+            <button onClick={() => setConfirming(false)}
+              className="rounded-full px-2 py-0.5 transition-all active:scale-95"
+              style={{ background: COLORS.borderSoft, color: COLORS.inkSoft, fontSize: '10px', fontWeight: 600 }}>
+              ביטול
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirming(true)}
+            className="flex items-center gap-1 transition-all hover:opacity-100 active:scale-95"
+            style={{ color: COLORS.inkLight, fontSize: '11px', opacity: 0.7 }}
+            aria-label="מחק שרשור">
+            <Trash2 size={11} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// MOMENTS VIEW
+// ============================================
+
+function MomentsView({ moments, onAdd, onDelete, onBack }) {
+  const [text, setText] = useState('');
+
+  const grouped = useMemo(() => {
+    const today = getDayKey();
+    const yesterday = getDaysAgoKey(1);
+    const groups = {};
+    [...moments].sort((a, b) => b.createdAt - a.createdAt).forEach((m) => {
+      let label;
+      if (m.dayDate === today) label = 'היום';
+      else if (m.dayDate === yesterday) label = 'אתמול';
+      else label = formatHebShort(dayKeyFromString(m.dayDate));
+      groups[label] = groups[label] || [];
+      groups[label].push(m);
+    });
+    return groups;
+  }, [moments]);
+
+  const submit = () => { if (!text.trim()) return; onAdd(text.trim()); setText(''); };
+
+  return (
+    <>
+      <div className="flex items-start justify-between mb-1">
+        <div className="text-right">
+          <div className="mb-0.5" style={{ color: COLORS.inkLight, fontSize: '11px' }}>
+            {formatHebDate(new Date())}
+          </div>
+          <h1 className="font-bold tracking-tight flex items-center gap-2"
+            style={{ color: COLORS.ink, fontSize: '26px', lineHeight: 1.1 }}>
+            רגעים יפים <Sparkles size={20} style={{ color: COLORS.moment }} />
+          </h1>
+        </div>
+        <button onClick={onBack}
+          className="rounded-full p-2 transition-all active:scale-95 hover:opacity-70"
+          style={{ color: COLORS.inkSoft }} aria-label="חזרה">
+          <ChevronLeft size={20} style={{ transform: 'scaleX(-1)' }} />
+        </button>
+      </div>
+
+      <div className="rounded-2xl p-4 mt-6 mb-7"
+        style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+        <textarea value={text} onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(); }}
+          placeholder="משהו טוב שקרה היום..." rows={2}
+          className="w-full outline-none bg-transparent resize-none leading-relaxed"
+          style={{ color: COLORS.ink, fontFamily: FONT, fontSize: '14px' }} />
+        <div className="flex items-center justify-between mt-2">
+          <span style={{ color: COLORS.inkVeryLight, fontSize: '10px' }}>
+            ⌘ + Enter לשמירה מהירה
+          </span>
+          <button onClick={submit} disabled={!text.trim()}
+            className="px-3.5 py-1.5 rounded-lg transition-all"
+            style={{ background: text.trim() ? COLORS.moment : COLORS.borderSoft,
+              color: text.trim() ? 'white' : COLORS.inkLight,
+              fontWeight: 600, fontSize: '12px', opacity: text.trim() ? 1 : 0.7 }}>
+            שמירה
+          </button>
+        </div>
+      </div>
+
+      {moments.length === 0 ? (
+        <div className="text-center py-12">
+          <Sparkles size={28} className="mx-auto mb-3" style={{ color: COLORS.moment, opacity: 0.4 }} />
+          <p style={{ color: COLORS.inkLight, fontSize: '13px' }}>עדיין אין כאן רגעים</p>
+          <p className="mt-1" style={{ color: COLORS.inkVeryLight, fontSize: '11.5px' }}>
+            כל מה שכדאי לזכור — מתחיל מכאן
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {Object.entries(grouped).map(([label, items]) => (
+            <div key={label}>
+              <h3 className="mb-2"
+                style={{ color: COLORS.inkLight, fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                {label.toUpperCase()}
+              </h3>
+              <div className="space-y-2">
+                {items.map((m) => (
+                  <div key={m.id} className="rounded-xl px-4 py-3 group flex items-start gap-2.5"
+                    style={{ background: COLORS.momentTint }}>
+                    <Sparkles size={11} className="flex-shrink-0"
+                      style={{ color: COLORS.moment, marginTop: '4px' }} />
+                    <p className="flex-1 leading-relaxed" style={{ color: COLORS.ink, fontSize: '13.5px' }}>
+                      {m.text}
+                    </p>
+                    <button onClick={() => onDelete(m.id)}
+                      className="opacity-0 group-hover:opacity-50 hover:opacity-100 transition-all"
+                      aria-label="מחק">
+                      <X size={12} style={{ color: COLORS.inkLight }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ============================================
+// DAILY SUMMARY
+// ============================================
+
+function DailySummaryView({ tasks, moments, todayKey, onBack }) {
+  const todayTasks = tasks.filter((t) => t.dayDate === todayKey);
+  const completed = todayTasks.filter(isTaskComplete);
+  const planned = completed.filter((t) => !t.isBonus);
+  const bonus = completed.filter((t) => t.isBonus);
+  const todayMoments = moments.filter((m) => m.dayDate === todayKey);
+
+  const byCategory = useMemo(() => {
+    const groups = {};
+    for (const t of completed) {
+      const c = t.category || 'כללי';
+      groups[c] = groups[c] || [];
+      groups[c].push(t);
+    }
+    return Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
+  }, [completed]);
+
+  const total = completed.length + todayMoments.length;
+
+  return (
+    <>
+      <div className="flex items-start justify-between mb-1">
+        <div className="text-right">
+          <div className="mb-0.5" style={{ color: COLORS.inkLight, fontSize: '11px' }}>
+            {formatHebDate(new Date())}
+          </div>
+          <h1 className="font-bold tracking-tight"
+            style={{ color: COLORS.ink, fontSize: '26px', lineHeight: 1.1 }}>
+            סיכום יומי
+          </h1>
+        </div>
+        <button onClick={onBack}
+          className="rounded-full p-2 transition-all active:scale-95 hover:opacity-70"
+          style={{ color: COLORS.inkSoft }}>
+          <ChevronLeft size={20} style={{ transform: 'scaleX(-1)' }} />
+        </button>
+      </div>
+
+      {total === 0 && todayMoments.length === 0 ? (
+        <div className="text-center py-16 mt-8">
+          <p style={{ color: COLORS.inkSoft, fontSize: '15px', fontWeight: 500 }}>
+            עוד לא הצטבר היום סיכום
+          </p>
+          <p className="mt-1.5" style={{ color: COLORS.inkLight, fontSize: '12.5px' }}>
+            וזה גם בסדר. יום שלם עוד לפנייך.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-7 space-y-5">
+          <div className="rounded-2xl p-7 text-center"
+            style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+            <div style={{ color: COLORS.ink, fontSize: '52px', fontWeight: 800, lineHeight: 1, fontFamily: FONT }}>
+              {total}
+            </div>
+            <div className="mt-2" style={{ color: COLORS.inkSoft, fontSize: '12.5px' }}>
+              {total === 1 ? 'דבר טוב היום' : 'דברים טובים היום'}
+            </div>
+          </div>
+
+          {(planned.length > 0 || bonus.length > 0) && (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-2xl p-4 text-center"
+                style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+                <div style={{ color: COLORS.ink, fontSize: '24px', fontWeight: 700 }}>
+                  {planned.length}
+                </div>
+                <div className="mt-1" style={{ color: COLORS.inkSoft, fontSize: '11.5px' }}>תוכננו</div>
+              </div>
+              <div className="rounded-2xl p-4 text-center"
+                style={{ background: COLORS.momentTint, border: `1px solid ${COLORS.momentTint}` }}>
+                <div style={{ color: COLORS.moment, fontSize: '24px', fontWeight: 700 }}>
+                  {bonus.length}
+                </div>
+                <div className="mt-1" style={{ color: COLORS.moment, fontSize: '11.5px' }}>✦ בונוס</div>
+              </div>
+            </div>
+          )}
+
+          {completed.length > 0 && (
+            <div className="rounded-2xl p-4"
+              style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+              <h3 className="mb-3"
+                style={{ color: COLORS.inkLight, fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                לפי קטגוריה
+              </h3>
+              <div className="space-y-2.5">
+                {byCategory.map(([catName, items]) => {
+                  const cat = getCategoryColor(catName);
+                  const isWater = isWaterCategory(catName);
+                  return (
+                    <div key={catName}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div className="rounded-full flex items-center justify-center"
+                          style={{ background: cat.tint, width: '22px', height: '22px',
+                            color: cat.color, fontSize: '10.5px', fontWeight: 700 }}>
+                          {isWater ? <Droplet size={10} fill={cat.color} strokeWidth={0} /> : firstLetter(catName)}
+                        </div>
+                        <span style={{ color: COLORS.ink, fontSize: '13px', fontWeight: 600 }}>
+                          {catName}
+                        </span>
+                        <span className="mr-auto" style={{ color: COLORS.inkLight, fontSize: '11.5px' }}>
+                          {items.length}
+                        </span>
+                      </div>
+                      <ul className="space-y-1" style={{ paddingRight: '30px' }}>
+                        {items.map((t) => (
+                          <li key={t.id} style={{ color: COLORS.inkSoft, fontSize: '12.5px' }}>
+                            • {t.text}
+                            {t.isBonus && (
+                              <span className="mr-1" style={{ color: COLORS.moment, fontSize: '10px' }}>✦</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {todayMoments.length > 0 && (
+            <div className="rounded-2xl p-4" style={{ background: COLORS.momentTint }}>
+              <h3 className="mb-3 flex items-center gap-1.5"
+                style={{ color: COLORS.moment, fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                <Sparkles size={11} />רגעים יפים
+              </h3>
+              <ul className="space-y-2">
+                {todayMoments.map((m) => (
+                  <li key={m.id} style={{ color: COLORS.ink, fontSize: '13px', lineHeight: 1.5 }}>
+                    {m.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ============================================
+// WEEKLY SUMMARY
+// ============================================
+
+function WeeklySummaryView({ tasks, moments, todayKey, onBack }) {
+  const days = useMemo(() => {
+    const list = [];
+    for (let i = 6; i >= 0; i--) {
+      const dKey = getDaysAgoKey(i);
+      const d = dayKeyFromString(dKey);
+      const dayTasks = tasks.filter((t) => t.dayDate === dKey);
+      const completedCount = dayTasks.filter(isTaskComplete).length;
+      const dayMoments = moments.filter((m) => m.dayDate === dKey);
+      list.push({
+        key: dKey, date: d, total: dayTasks.length, completed: completedCount,
+        bonus: dayTasks.filter((t) => isTaskComplete(t) && t.isBonus).length,
+        moments: dayMoments.length, isToday: dKey === todayKey,
+      });
+    }
+    return list;
+  }, [tasks, moments, todayKey]);
+
+  const weekTasks = tasks.filter((t) => {
+    const cutoff = getDaysAgoKey(6);
+    return t.dayDate >= cutoff && isTaskComplete(t);
+  });
+  const weekMoments = moments.filter((m) => m.dayDate >= getDaysAgoKey(6));
+
+  const byCategory = useMemo(() => {
+    const groups = {};
+    for (const t of weekTasks) {
+      const c = t.category || 'כללי';
+      groups[c] = (groups[c] || 0) + 1;
+    }
+    return Object.entries(groups).sort((a, b) => b[1] - a[1]);
+  }, [weekTasks]);
+
+  const totalCompleted = weekTasks.length;
+  const totalBonus = weekTasks.filter((t) => t.isBonus).length;
+  const maxDayDone = Math.max(...days.map((d) => d.completed), 1);
+
+  let streak = 0;
+  for (let i = days.length - 1; i >= 0; i--) {
+    if (days[i].completed > 0 || days[i].moments > 0) streak++;
+    else break;
+  }
+
+  return (
+    <>
+      <div className="flex items-start justify-between mb-1">
+        <div className="text-right">
+          <div className="mb-0.5" style={{ color: COLORS.inkLight, fontSize: '11px' }}>
+            7 ימים אחרונים
+          </div>
+          <h1 className="font-bold tracking-tight"
+            style={{ color: COLORS.ink, fontSize: '26px', lineHeight: 1.1 }}>
+            סיכום שבועי
+          </h1>
+        </div>
+        <button onClick={onBack}
+          className="rounded-full p-2 transition-all active:scale-95 hover:opacity-70"
+          style={{ color: COLORS.inkSoft }}>
+          <ChevronLeft size={20} style={{ transform: 'scaleX(-1)' }} />
+        </button>
+      </div>
+
+      {totalCompleted === 0 && weekMoments.length === 0 ? (
+        <div className="text-center py-16 mt-8">
+          <p style={{ color: COLORS.inkSoft, fontSize: '15px', fontWeight: 500 }}>
+            השבוע עוד לא התחיל להצטבר
+          </p>
+          <p className="mt-1.5" style={{ color: COLORS.inkLight, fontSize: '12.5px' }}>
+            כל קלף שתסמני ייכנס לכאן
+          </p>
+        </div>
+      ) : (
+        <div className="mt-7 space-y-5">
+          <div className="grid grid-cols-3 gap-2">
+            <StatCard label="סה״כ" value={totalCompleted} color={COLORS.ink} />
+            <StatCard label="✦ בונוס" value={totalBonus} color={COLORS.moment} tint={COLORS.momentTint} />
+            <StatCard label={<span className="inline-flex items-center gap-1"><Flame size={11} /> רצף</span>}
+              value={streak} color={streak >= 3 ? COLORS.cnf : COLORS.ink} />
+          </div>
+
+          <div className="rounded-2xl p-4" style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+            <h3 className="mb-3"
+              style={{ color: COLORS.inkLight, fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em' }}>
+              לפי יום
+            </h3>
+            <div className="flex items-end justify-between gap-2" style={{ height: '90px' }}>
+              {days.map((d) => {
+                const ratio = d.completed / maxDayDone;
+                const dayName = new Intl.DateTimeFormat('he-IL', { weekday: 'short' }).format(d.date);
+                return (
+                  <div key={d.key}
+                    className="flex flex-col items-center justify-end flex-1 gap-1.5"
+                    style={{ height: '100%' }}>
+                    <div style={{ color: d.isToday ? COLORS.ink : COLORS.inkLight, fontSize: '10.5px', fontWeight: 700 }}>
+                      {d.completed || ''}
+                    </div>
+                    <div className="w-full rounded-md transition-all"
+                      style={{ height: `${Math.max(ratio * 60, d.completed > 0 ? 6 : 2)}px`,
+                        background: d.completed === 0 ? COLORS.borderSoft
+                          : d.isToday ? COLORS.ink : COLORS.inkSoft,
+                        opacity: d.isToday ? 1 : 0.85 }} />
+                    <div style={{ color: d.isToday ? COLORS.ink : COLORS.inkLight,
+                      fontSize: '10px', fontWeight: d.isToday ? 700 : 500 }}>
+                      {dayName.replace('יום ', '')}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {byCategory.length > 0 && (
+            <div className="rounded-2xl p-4" style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+              <h3 className="mb-3"
+                style={{ color: COLORS.inkLight, fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                לפי קטגוריה
+              </h3>
+              <div className="space-y-2.5">
+                {byCategory.map(([catName, count]) => {
+                  const cat = getCategoryColor(catName);
+                  const isWater = isWaterCategory(catName);
+                  const ratio = totalCompleted > 0 ? count / totalCompleted : 0;
+                  return (
+                    <div key={catName} className="flex items-center gap-3">
+                      <div className="rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ background: cat.tint, width: '26px', height: '26px',
+                          color: cat.color, fontSize: '12px', fontWeight: 700 }}>
+                        {isWater ? <Droplet size={12} fill={cat.color} strokeWidth={0} /> : firstLetter(catName)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <span style={{ color: COLORS.ink, fontSize: '12.5px', fontWeight: 600 }}>
+                            {catName}
+                          </span>
+                          <span style={{ color: COLORS.inkLight, fontSize: '11.5px' }}>
+                            {count}
+                          </span>
+                        </div>
+                        <div className="rounded-full overflow-hidden"
+                          style={{ background: COLORS.borderSoft, height: '4px' }}>
+                          <div className="h-full rounded-full transition-all"
+                            style={{ width: `${ratio * 100}%`, background: cat.color }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {weekMoments.length > 0 && (
+            <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: COLORS.momentTint }}>
+              <div className="rounded-full flex items-center justify-center"
+                style={{ background: 'white', width: '36px', height: '36px' }}>
+                <Sparkles size={16} style={{ color: COLORS.moment }} />
+              </div>
+              <div className="flex-1">
+                <div style={{ color: COLORS.ink, fontSize: '14px', fontWeight: 600 }}>
+                  {weekMoments.length} {weekMoments.length === 1 ? 'רגע יפה' : 'רגעים יפים'} השבוע
+                </div>
+                <div className="mt-0.5" style={{ color: COLORS.moment, fontSize: '11.5px' }}>
+                  כל אחד מהם — לא מובן מאליו
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function StatCard({ label, value, color, tint }) {
+  return (
+    <div className="rounded-2xl p-3 text-center"
+      style={{ background: tint || 'white',
+        border: tint ? `1px solid ${tint}` : `1px solid ${COLORS.border}` }}>
+      <div style={{ color: color || COLORS.ink, fontSize: '22px', fontWeight: 700, lineHeight: 1 }}>
+        {value}
+      </div>
+      <div className="mt-1.5"
+        style={{ color: color || COLORS.inkSoft, fontSize: '10.5px', fontWeight: 600 }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+
+// Mount
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+
+
+// Hide splash once mounted
+setTimeout(() => {
+  const s = document.getElementById('splash');
+  if (s) { s.classList.add('hide'); setTimeout(() => s.remove(), 350); }
+}, 100);
+  </script>
+</body>
+</html>
