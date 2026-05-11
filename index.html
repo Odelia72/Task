@@ -220,7 +220,18 @@ function isTaskComplete(task) {
   if (isWaterCategory(task.category)) {
     return (task.waterCups || 0) >= WATER_GOAL;
   }
+  if (task.counter && task.counter.target) {
+    return (task.counter.count || 0) >= task.counter.target;
+  }
+  if (task.status) return task.status === 'done';
   return !!task.completed;
+}
+
+function getTaskStatus(task) {
+  // Returns: 'open' | 'inProgress' | 'done'
+  if (isTaskComplete(task)) return 'done';
+  if (task.status === 'inProgress') return 'inProgress';
+  return 'open';
 }
 
 function getDaysAgoKey(n) {
@@ -246,17 +257,22 @@ function firstLetter(str) {
 }
 
 function migrateTask(task) {
-  if (task.category) return task;
-  if (!task.area) return { ...task, category: 'כללי' };
-  const legacy = LEGACY_AREAS[task.area];
-  if (!legacy) return { ...task, category: 'כללי' };
-  if (task.area === 'health' && task.sub === 'water') {
-    return { ...task, category: 'מים' };
+  // Ensure status field exists
+  let migrated = task;
+  if (!migrated.status) {
+    migrated = { ...migrated, status: migrated.completed ? 'done' : 'open' };
   }
-  if (task.sub && legacy.subs && legacy.subs[task.sub]) {
-    return { ...task, category: `${legacy.name} · ${legacy.subs[task.sub]}` };
+  if (migrated.category) return migrated;
+  if (!migrated.area) return { ...migrated, category: 'כללי' };
+  const legacy = LEGACY_AREAS[migrated.area];
+  if (!legacy) return { ...migrated, category: 'כללי' };
+  if (migrated.area === 'health' && migrated.sub === 'water') {
+    return { ...migrated, category: 'מים' };
   }
-  return { ...task, category: legacy.name };
+  if (migrated.sub && legacy.subs && legacy.subs[migrated.sub]) {
+    return { ...migrated, category: `${legacy.name} · ${legacy.subs[migrated.sub]}` };
+  }
+  return { ...migrated, category: legacy.name };
 }
 
 // ============================================
@@ -349,6 +365,7 @@ function App() {
           text: link.text,
           category: link.category,
           urgency: 'm',
+          status: 'open',
           completed: false,
           isBonus: false,
           dayDate: linkDayDate,
@@ -387,19 +404,39 @@ function App() {
   );
   const deleteTask = useCallback((id) => setTasks((prev) => prev.filter((t) => t.id !== id)), []);
   const moveTaskToTomorrow = useCallback((id) => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    updateTask(id, { dayDate: getDayKey(tomorrow) });
-  }, [updateTask]);
-  const moveTaskToToday = useCallback((id) => updateTask(id, { dayDate: getDayKey() }), [updateTask]);
+    setTasks((prev) => prev.map((t) => {
+      if (t.id !== id) return t;
+      const base = dayKeyFromString(t.dayDate);
+      base.setDate(base.getDate() + 1);
+      return { ...t, dayDate: getDayKey(base), moveCount: (t.moveCount || 0) + 1 };
+    }));
+  }, []);
+  const moveTaskToToday = useCallback((id) => {
+    setTasks((prev) => prev.map((t) => {
+      if (t.id !== id) return t;
+      return { ...t, dayDate: getDayKey(), moveCount: (t.moveCount || 0) + 1 };
+    }));
+  }, []);
+
+  // Mark task as completed retroactively - keeps original dayDate, completedAt = end of that day
+  const markTaskAsDone = useCallback((id) => {
+    setTasks((prev) => prev.map((t) => {
+      if (t.id !== id) return t;
+      // Compute completedAt as end-of-day on the task's original date
+      const d = dayKeyFromString(t.dayDate);
+      d.setHours(23, 59, 0, 0);
+      return { ...t, status: 'done', completed: true, completedAt: d.getTime() };
+    }));
+  }, []);
 
   const duplicateToTomorrow = useCallback((task) => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const base = dayKeyFromString(task.dayDate);
+    base.setDate(base.getDate() + 1);
     const newTask = {
       ...task,
       id: uid(),
-      dayDate: getDayKey(tomorrow),
+      dayDate: getDayKey(base),
+      status: 'open',
       completed: false,
       isBonus: false,
       completedAt: null,
@@ -459,20 +496,21 @@ function App() {
       <div className="max-w-md mx-auto px-5 pt-6" style={{ paddingBottom: view === 'today' ? '110px' : '32px' }}>
         {view === 'today' && (
           <TodayView
-            tasks={tasks} chains={chains} todayKey={todayKey}
+            tasks={tasks} chains={chains} moments={moments} todayKey={todayKey}
             onAdd={addTask} onUpdate={updateTask} onDelete={deleteTask}
             onMoveToTomorrow={moveTaskToTomorrow} onMoveToToday={moveTaskToToday}
+            onMarkAsDone={markTaskAsDone}
             onDuplicateToTomorrow={duplicateToTomorrow}
             onDeleteChainGroup={deleteChainGroup}
+            onAddMoment={addMoment} onDeleteMoment={deleteMoment}
             onOpenMoments={() => setView('moments')}
             onOpenDaily={() => setView('daily')}
             onOpenWeekly={() => setView('weekly')}
             onOpenChains={() => setView('chains')}
-            onReset={resetAllData}
           />
         )}
         {view === 'moments' && (
-          <MomentsView moments={moments} onAdd={addMoment} onDelete={deleteMoment} onBack={() => setView('today')} />
+          <MomentsView moments={moments} todayKey={todayKey} onAdd={addMoment} onDelete={deleteMoment} onBack={() => setView('today')} />
         )}
         {view === 'daily' && (
           <DailySummaryView tasks={tasks} moments={moments} todayKey={todayKey} onBack={() => setView('today')} />
@@ -489,13 +527,118 @@ function App() {
 }
 
 // ============================================
+// TODAY MOMENTS SECTION (inline below tasks)
+// ============================================
+
+function TodayMomentsSection({ moments, onAddMoment, onDeleteMoment, onOpenMoments }) {
+  const [text, setText] = useState('');
+  const [adding, setAdding] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (adding) inputRef.current?.focus();
+  }, [adding]);
+
+  const submit = () => {
+    if (!text.trim()) return;
+    onAddMoment(text.trim());
+    setText('');
+    setAdding(false);
+  };
+
+  return (
+    <div className="mt-8 mb-2">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-3" style={{ paddingRight: '4px' }}>
+        <Sparkles size={11} style={{ color: COLORS.moment }} strokeWidth={2.5} />
+        <h3 style={{ color: COLORS.moment, fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.06em' }}>
+          רגעים יפים מהיום{moments.length > 0 ? ` (${moments.length})` : ''}
+        </h3>
+        <div className="flex-1" style={{ height: '1px', background: COLORS.borderSoft }} />
+        {moments.length > 0 && onOpenMoments && (
+          <button onClick={onOpenMoments}
+            className="transition-all hover:opacity-80 active:scale-95"
+            style={{ color: COLORS.inkLight, fontSize: '10px', fontWeight: 600 }}>
+            כל הרגעים →
+          </button>
+        )}
+      </div>
+
+      {/* Existing moments */}
+      {moments.length > 0 && (
+        <div className="space-y-1.5 mb-2.5">
+          {moments.map((m) => (
+            <div key={m.id}
+              className="rounded-2xl px-4 py-2.5 group flex items-start gap-2"
+              style={{ background: COLORS.momentTint }}>
+              <div className="flex-1 min-w-0">
+                <p style={{ color: COLORS.ink, fontSize: '13px', lineHeight: 1.5, fontWeight: 500 }}>
+                  {m.text}
+                </p>
+              </div>
+              <button onClick={() => onDeleteMoment(m.id)}
+                className="transition-all hover:opacity-100 active:scale-95"
+                style={{ color: COLORS.moment, opacity: 0.4, padding: '2px' }}
+                aria-label="מחק רגע">
+                <X size={11} strokeWidth={2.5} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add */}
+      {adding ? (
+        <div className="rounded-2xl p-3"
+          style={{ background: 'white', border: `1px solid ${COLORS.momentTint}` }}>
+          <textarea ref={inputRef} value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+              if (e.key === 'Escape') { setAdding(false); setText(''); }
+            }}
+            placeholder="משהו שהאיר את היום?"
+            rows={2}
+            className="w-full outline-none bg-transparent resize-none"
+            style={{ color: COLORS.ink, fontSize: '13.5px', fontFamily: FONT, lineHeight: 1.5 }} />
+          <div className="flex items-center justify-end gap-1.5 mt-2">
+            <button onClick={() => { setAdding(false); setText(''); }}
+              className="p-1.5 rounded-lg transition-all hover:opacity-70"
+              style={{ color: COLORS.inkLight }}
+              aria-label="ביטול">
+              <X size={14} />
+            </button>
+            <button onClick={submit} disabled={!text.trim()}
+              className="p-1.5 rounded-lg transition-all"
+              style={{ background: text.trim() ? COLORS.moment : COLORS.borderSoft,
+                color: text.trim() ? 'white' : COLORS.inkLight,
+                opacity: text.trim() ? 1 : 0.6 }}
+              aria-label="שמור">
+              <Check size={14} strokeWidth={3} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)}
+          className="w-full rounded-2xl py-3 px-5 flex items-center justify-center gap-2 transition-all active:scale-[0.99] hover:bg-white"
+          style={{ background: 'transparent', border: `1px dashed #E8D5C7`, color: COLORS.moment }}>
+          <Sparkles size={13} strokeWidth={2.2} />
+          <span style={{ fontSize: '13px', fontWeight: 500 }}>
+            {moments.length === 0 ? 'רגע יפה מהיום' : 'עוד רגע'}
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // TODAY VIEW
 // ============================================
 
-function TodayView({ tasks, chains, todayKey, onAdd, onUpdate, onDelete, onMoveToTomorrow, onMoveToToday, onDuplicateToTomorrow, onDeleteChainGroup, onOpenMoments, onOpenDaily, onOpenWeekly, onOpenChains, onReset }) {
+function TodayView({ tasks, chains, moments, todayKey, onAdd, onUpdate, onDelete, onMoveToTomorrow, onMoveToToday, onMarkAsDone, onDuplicateToTomorrow, onDeleteChainGroup, onAddMoment, onDeleteMoment, onOpenMoments, onOpenDaily, onOpenWeekly, onOpenChains }) {
   const [showAdd, setShowAdd] = useState(false);
   const [dayOffset, setDayOffset] = useState(0);
-  const [confirmingReset, setConfirmingReset] = useState(false);
 
   const viewedDate = useMemo(() => {
     const d = new Date();
@@ -547,6 +690,12 @@ function TodayView({ tasks, chains, todayKey, onAdd, onUpdate, onDelete, onMoveT
   const futureCount = useMemo(
     () => tasks.filter((t) => t.dayDate > viewedDayKey).length,
     [tasks, viewedDayKey]
+  );
+
+  // Today's moments
+  const todayMoments = useMemo(
+    () => (moments || []).filter((m) => m.dayDate === todayKey).sort((a, b) => b.createdAt - a.createdAt),
+    [moments, todayKey]
   );
 
   const goToToday = () => setDayOffset(0);
@@ -669,7 +818,7 @@ function TodayView({ tasks, chains, todayKey, onAdd, onUpdate, onDelete, onMoveT
 
       {/* Pending tasks section (only on today) */}
       {isViewingToday && pendingTasks.length > 0 && (
-        <PendingTasksSection pendingTasks={pendingTasks} onMoveToToday={onMoveToToday} onDelete={onDelete} />
+        <PendingTasksSection pendingTasks={pendingTasks} onMoveToToday={onMoveToToday} onMarkAsDone={onMarkAsDone} onDelete={onDelete} />
       )}
 
       {sortedTasks.length === 0 && !showAdd && pendingTasks.length === 0 && (
@@ -696,6 +845,7 @@ function TodayView({ tasks, chains, todayKey, onAdd, onUpdate, onDelete, onMoveT
       <div className="space-y-2.5">
         {sortedTasks.map((task) => (
           <TaskCard key={task.id} task={task}
+            todayKey={todayKey} allTasks={tasks}
             onUpdate={onUpdate} onDelete={onDelete}
             onMoveToTomorrow={onMoveToTomorrow}
             onDuplicateToTomorrow={onDuplicateToTomorrow}
@@ -703,38 +853,14 @@ function TodayView({ tasks, chains, todayKey, onAdd, onUpdate, onDelete, onMoveT
         ))}
       </div>
 
-      {/* Reset (testing) - subtle at the bottom */}
-      {onReset && (
-        <div className="mt-10 mb-4 text-center">
-          {confirmingReset ? (
-            <div className="inline-flex items-center gap-2 rounded-full px-3 py-1.5"
-              style={{ background: 'white', border: `1px solid ${COLORS.cnf}` }}>
-              <span style={{ color: COLORS.cnf, fontSize: '11px', fontWeight: 600 }}>
-                למחוק הכל?
-              </span>
-              <button onClick={() => {
-                  onReset();
-                  setConfirmingReset(false);
-                  setDayOffset(0);
-                }}
-                className="rounded-full px-2 py-0.5 transition-all active:scale-95"
-                style={{ background: COLORS.cnf, color: 'white', fontSize: '10.5px', fontWeight: 700 }}>
-                כן, מחקי
-              </button>
-              <button onClick={() => setConfirmingReset(false)}
-                className="rounded-full px-2 py-0.5 transition-all active:scale-95"
-                style={{ background: COLORS.borderSoft, color: COLORS.inkSoft, fontSize: '10.5px', fontWeight: 600 }}>
-                ביטול
-              </button>
-            </div>
-          ) : (
-            <button onClick={() => setConfirmingReset(true)}
-              className="transition-all hover:opacity-100 active:scale-95"
-              style={{ color: COLORS.inkVeryLight, fontSize: '10.5px', fontWeight: 500, opacity: 0.7, letterSpacing: '0.04em' }}>
-              איפוס נתונים (לבדיקה)
-            </button>
-          )}
-        </div>
+      {/* Beautiful moments - below tasks (only on today) */}
+      {isViewingToday && (
+        <TodayMomentsSection
+          moments={todayMoments}
+          onAddMoment={onAddMoment}
+          onDeleteMoment={onDeleteMoment}
+          onOpenMoments={onOpenMoments}
+        />
       )}
 
       {/* Bottom nav */}
@@ -763,7 +889,7 @@ function TodayView({ tasks, chains, todayKey, onAdd, onUpdate, onDelete, onMoveT
 // PENDING TASKS SECTION
 // ============================================
 
-function PendingTasksSection({ pendingTasks, onMoveToToday, onDelete }) {
+function PendingTasksSection({ pendingTasks, onMoveToToday, onMarkAsDone, onDelete }) {
   return (
     <>
       {/* Section header */}
@@ -798,12 +924,20 @@ function PendingTasksSection({ pendingTasks, onMoveToToday, onDelete }) {
               </div>
 
               {/* Action buttons */}
-              <div className="flex items-center gap-3 mt-2.5">
+              <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                <button onClick={() => onMarkAsDone(task.id)}
+                  className="flex items-center gap-1 rounded-full px-3 py-1 transition-all active:scale-95"
+                  style={{ background: '#5A8B6F', color: 'white', fontSize: '11px', fontWeight: 600 }}
+                  aria-label="כבר עשיתי">
+                  <Check size={11} strokeWidth={3} />כבר עשיתי
+                </button>
                 <button onClick={() => onMoveToToday(task.id)}
                   className="flex items-center gap-1 rounded-full px-3 py-1 transition-all active:scale-95"
-                  style={{ background: COLORS.ink, color: 'white', fontSize: '11px', fontWeight: 600 }}
-                  aria-label="קבל">
-                  <Check size={11} strokeWidth={3} />קבל להיום
+                  style={{ background: 'transparent', color: COLORS.inkSoft,
+                    border: `1px solid ${COLORS.border}`,
+                    fontSize: '11px', fontWeight: 600 }}
+                  aria-label="קבל להיום">
+                  <ArrowLeft size={11} strokeWidth={2.5} />קבל להיום
                 </button>
                 <button onClick={() => onDelete(task.id)}
                   className="flex items-center gap-1 transition-all hover:opacity-100 active:scale-95 mr-auto"
@@ -893,6 +1027,10 @@ function AddTaskForm({ onAdd, onCancel, todayKey, defaultDayDate, allTasks, allC
 
   // Chain-related state
   const [chainLinks, setChainLinks] = useState([]); // [{text, category, dayOffset}]
+
+  // Counter mode state
+  const [counterEnabled, setCounterEnabled] = useState(false);
+  const [counterTarget, setCounterTarget] = useState(''); // empty = no target
 
   // Compute initial date mode based on defaultDayDate (which day the user is viewing)
   const tomorrowKey = useMemo(() => {
@@ -1004,17 +1142,30 @@ function AddTaskForm({ onAdd, onCancel, todayKey, defaultDayDate, allTasks, allC
     const isWater = isWaterCategory(cleanCategory);
     const dayDate = computeDayDate();
     const isPastOrToday = dayDate <= todayKey;
+
+    // Build counter field if enabled (only for non-water; water is its own counter)
+    let counterField = null;
+    if (counterEnabled && !isWater) {
+      const targetNum = parseInt(counterTarget, 10);
+      counterField = {
+        count: 0,
+        target: !isNaN(targetNum) && targetNum > 0 ? targetNum : null,
+      };
+    }
+
     const task = {
       id: uid(),
       category: cleanCategory,
       text: text.trim(),
       urgency: 'm',
+      status: isBonus && isPastOrToday ? 'done' : 'open',
       completed: isBonus && isPastOrToday,
       isBonus: isBonus && isPastOrToday,
       dayDate,
       createdAt: Date.now(),
       completedAt: isBonus && isPastOrToday ? Date.now() : null,
       ...(isWater ? { waterCups: isBonus && isPastOrToday ? WATER_GOAL : 0 } : {}),
+      ...(counterField ? { counter: counterField } : {}),
     };
 
     // If user added new chain links, build a chain rule
@@ -1261,6 +1412,43 @@ function AddTaskForm({ onAdd, onCancel, todayKey, defaultDayDate, allTasks, allC
         </div>
       )}
 
+      {/* Counter toggle - only for non-water tasks */}
+      {!isWaterCategory(category) && text.trim() && category.trim() && (
+        <div className="mt-3.5">
+          {counterEnabled ? (
+            <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5"
+              style={{ background: COLORS.borderSoft }}>
+              <span style={{ color: COLORS.inkSoft, fontSize: '11px', fontWeight: 600 }}>
+                ✦ ספירה
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span style={{ color: COLORS.inkLight, fontSize: '11px' }}>יעד:</span>
+                <input type="number" value={counterTarget}
+                  onChange={(e) => setCounterTarget(e.target.value)}
+                  placeholder="ללא"
+                  min="1"
+                  className="rounded-lg outline-none bg-white text-center"
+                  style={{ width: '50px', height: '24px', fontSize: '12px',
+                    border: `1px solid ${COLORS.border}`, fontFamily: FONT }} />
+              </div>
+              <button onClick={() => { setCounterEnabled(false); setCounterTarget(''); }}
+                className="mr-auto transition-all hover:opacity-70 active:scale-95"
+                style={{ color: COLORS.inkLight, padding: '2px' }}
+                aria-label="הסר ספירה">
+                <X size={13} strokeWidth={2.2} />
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setCounterEnabled(true)}
+              className="transition-all hover:opacity-80 active:scale-95 flex items-center gap-1.5"
+              style={{ color: COLORS.inkLight, fontSize: '11px', fontWeight: 500 }}>
+              <span style={{ fontSize: '12px' }}>✦</span>
+              <span>+ ספירה (למשל מדרגות, חזרות)</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Chain - existing links being added */}
       {chainLinks.length > 0 && (
         <div className="mt-3.5 rounded-xl p-3" style={{ background: COLORS.borderSoft }}>
@@ -1349,69 +1537,188 @@ function AddTaskForm({ onAdd, onCancel, todayKey, defaultDayDate, allTasks, allC
 // ============================================
 // TASK CARD
 // ============================================
+// EDIT TASK INLINE (expanded edit form within task card)
+// ============================================
 
-function TaskCard({ task, onUpdate, onDelete, onMoveToTomorrow, onDuplicateToTomorrow, onDeleteChainGroup }) {
+function EditTaskInline({ task, todayKey, onSave, onCancel, allTasks }) {
+  const [text, setText] = useState(task.text);
+  const [category, setCategory] = useState(task.category);
+  const [dayDate, setDayDate] = useState(task.dayDate);
+  const textRef = useRef(null);
+
+  useEffect(() => { textRef.current?.focus(); textRef.current?.select(); }, []);
+
+  const tomorrowKey = useMemo(() => {
+    const t = dayKeyFromString(todayKey);
+    t.setDate(t.getDate() + 1);
+    return getDayKey(t);
+  }, [todayKey]);
+
+  const dayAfterKey = useMemo(() => {
+    const t = dayKeyFromString(todayKey);
+    t.setDate(t.getDate() + 2);
+    return getDayKey(t);
+  }, [todayKey]);
+
+  // Determine which pill is "active" based on dayDate
+  const dateMode = useMemo(() => {
+    if (dayDate === todayKey) return 'today';
+    if (dayDate === tomorrowKey) return 'tomorrow';
+    if (dayDate === dayAfterKey) return 'dayAfter';
+    return 'custom';
+  }, [dayDate, todayKey, tomorrowKey, dayAfterKey]);
+
+  const setDateMode = (mode) => {
+    if (mode === 'today') setDayDate(todayKey);
+    else if (mode === 'tomorrow') setDayDate(tomorrowKey);
+    else if (mode === 'dayAfter') setDayDate(dayAfterKey);
+  };
+
+  const canSave = text.trim() && category.trim();
+  const handleSave = () => {
+    if (!canSave) return;
+    onSave({ text: text.trim(), category: category.trim(), dayDate });
+  };
+
+  const cat = category.trim() ? getCategoryColor(category.trim()) : null;
+  const isWaterEdit = isWaterCategory(category.trim());
+
+  return (
+    <div className="rounded-2xl p-3.5"
+      style={{ background: 'white', border: `1.5px solid ${cat ? cat.color : COLORS.border}` }}>
+      {/* Text */}
+      <input ref={textRef} type="text" value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && canSave) handleSave(); if (e.key === 'Escape') onCancel(); }}
+        placeholder="שם המשימה"
+        className="w-full outline-none bg-transparent py-1"
+        style={{ color: COLORS.ink, fontSize: '14px', fontFamily: FONT, fontWeight: 500,
+          borderBottom: `1px solid ${COLORS.borderSoft}` }} />
+
+      {/* Category */}
+      <div className="flex items-center gap-1.5 mt-2.5">
+        {cat && (
+          <div className="rounded-full flex items-center justify-center flex-shrink-0"
+            style={{ background: cat.tint, width: '18px', height: '18px',
+              color: cat.color, fontSize: '10px', fontWeight: 700 }}>
+            {isWaterEdit ? <Droplet size={9} fill={cat.color} strokeWidth={0} /> : firstLetter(category)}
+          </div>
+        )}
+        <input type="text" value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && canSave) handleSave(); if (e.key === 'Escape') onCancel(); }}
+          placeholder="קטגוריה"
+          className="flex-1 outline-none bg-transparent py-1"
+          style={{ color: COLORS.inkSoft, fontSize: '12.5px', fontFamily: FONT, fontWeight: 500,
+            borderBottom: `1px solid ${COLORS.borderSoft}` }} />
+      </div>
+
+      {/* Date pills */}
+      <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+        <Clock size={11} style={{ color: COLORS.inkLight }} />
+        {[
+          { mode: 'today', label: 'היום' },
+          { mode: 'tomorrow', label: 'מחר' },
+          { mode: 'dayAfter', label: 'מחרתיים' },
+        ].map((opt) => {
+          const active = dateMode === opt.mode;
+          return (
+            <button key={opt.mode} onClick={() => setDateMode(opt.mode)}
+              className="px-2.5 py-1 rounded-full transition-all"
+              style={{ background: active ? COLORS.ink : 'transparent',
+                color: active ? 'white' : COLORS.inkSoft,
+                border: `1px solid ${active ? COLORS.ink : COLORS.border}`,
+                fontWeight: active ? 600 : 500, fontSize: '11.5px' }}>
+              {opt.label}
+            </button>
+          );
+        })}
+        <label className="px-2.5 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1"
+          style={{ background: dateMode === 'custom' ? COLORS.ink : 'transparent',
+            color: dateMode === 'custom' ? 'white' : COLORS.inkSoft,
+            border: `1px solid ${dateMode === 'custom' ? COLORS.ink : COLORS.border}`,
+            fontWeight: dateMode === 'custom' ? 600 : 500, fontSize: '11.5px' }}>
+          <Calendar size={10} />
+          <input type="date" value={dayDate}
+            onChange={(e) => setDayDate(e.target.value)}
+            className="bg-transparent outline-none border-none"
+            style={{ fontSize: '11.5px', color: 'inherit', width: '85px', fontFamily: FONT }} />
+        </label>
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-1.5 mt-3 pt-2.5"
+        style={{ borderTop: `1px solid ${COLORS.borderSoft}` }}>
+        <button onClick={onCancel}
+          className="p-1.5 rounded-lg transition-all hover:opacity-70"
+          style={{ color: COLORS.inkLight }}
+          aria-label="ביטול">
+          <X size={14} />
+        </button>
+        <button onClick={handleSave} disabled={!canSave}
+          className="p-1.5 rounded-lg transition-all"
+          style={{ background: canSave ? COLORS.ink : COLORS.borderSoft,
+            color: canSave ? 'white' : COLORS.inkLight,
+            opacity: canSave ? 1 : 0.6 }}
+          aria-label="שמור">
+          <Check size={14} strokeWidth={3} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// TASK CARD
+// ============================================
+
+function TaskCard({ task, todayKey, allTasks, onUpdate, onDelete, onMoveToTomorrow, onDuplicateToTomorrow, onDeleteChainGroup }) {
   const [showUrgencyControls, setShowUrgencyControls] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState(task.text);
   const [deleteState, setDeleteState] = useState('idle'); // idle | confirming
-  const editInputRef = useRef(null);
   const cat = getCategoryColor(task.category);
   const isWater = isWaterCategory(task.category);
   const isComplete = isTaskComplete(task);
   const inChain = !!task.chainGroupId;
 
-  useEffect(() => {
-    if (isEditing) {
-      editInputRef.current?.focus();
-      editInputRef.current?.select();
-    }
-  }, [isEditing]);
-
-  useEffect(() => { setEditText(task.text); }, [task.text]);
-
-  const saveEdit = () => {
-    const trimmed = editText.trim();
-    if (trimmed && trimmed !== task.text) onUpdate(task.id, { text: trimmed });
-    else setEditText(task.text);
-    setIsEditing(false);
-  };
-  const cancelEdit = () => { setEditText(task.text); setIsEditing(false); };
   const cycleUrgency = (delta) => {
     const idx = urgencyRank(task.urgency);
     const newIdx = Math.max(0, Math.min(URGENCY_ORDER.length - 1, idx - delta));
     onUpdate(task.id, { urgency: URGENCY_ORDER[newIdx] });
   };
-  const toggleComplete = () => {
-    const newCompleted = !task.completed;
-    onUpdate(task.id, { completed: newCompleted, completedAt: newCompleted ? Date.now() : null });
+  const cycleStatus = () => {
+    const current = getTaskStatus(task);
+    if (current === 'open') {
+      onUpdate(task.id, { status: 'inProgress', completed: false, completedAt: null });
+    } else if (current === 'inProgress') {
+      onUpdate(task.id, { status: 'done', completed: true, completedAt: Date.now() });
+    } else {
+      onUpdate(task.id, { status: 'open', completed: false, completedAt: null });
+    }
   };
 
-  return (
+  return isEditing ? (
+    <EditTaskInline
+      task={task}
+      todayKey={todayKey}
+      allTasks={allTasks}
+      onSave={(updates) => { onUpdate(task.id, updates); setIsEditing(false); }}
+      onCancel={() => setIsEditing(false)}
+    />
+  ) : (
     <div className="rounded-2xl px-4 py-3 transition-all"
       style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
       <div className="flex items-center gap-3">
         {/* Text */}
         <div className="flex-1 min-w-0">
           <div className="leading-snug flex items-center gap-1.5 flex-wrap"
-            style={{ textDecoration: isComplete && !isEditing ? 'line-through' : 'none',
-              color: isComplete && !isEditing ? COLORS.inkLight : COLORS.ink,
+            style={{ textDecoration: isComplete ? 'line-through' : 'none',
+              color: isComplete ? COLORS.inkLight : COLORS.ink,
               fontWeight: 500, fontSize: '13.5px' }}>
-            {isEditing ? (
-              <input ref={editInputRef} type="text" value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                onBlur={saveEdit}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                className="flex-1 outline-none bg-transparent"
-                style={{ color: COLORS.ink, borderBottom: `1.5px solid ${cat.color}`,
-                  fontSize: '13.5px', fontFamily: FONT, fontWeight: 500,
-                  padding: '0 0 2px 0', minWidth: 0 }} />
-            ) : (
-              <span onClick={() => setIsEditing(true)} className="cursor-text" style={{ wordBreak: 'break-word' }}>
-                {task.text}
-              </span>
-            )}
-            {task.isBonus && !isEditing && (
+            <span onClick={() => setIsEditing(true)} className="cursor-text" style={{ wordBreak: 'break-word' }}>
+              {task.text}
+            </span>
+            {task.isBonus && (
               <span className="px-1.5 rounded inline-flex items-center"
                 style={{ background: COLORS.momentTint, color: COLORS.moment,
                   fontSize: '9.5px', fontWeight: 700, height: '15px', letterSpacing: '0.03em' }}>
@@ -1426,11 +1733,18 @@ function TaskCard({ task, onUpdate, onDelete, onMoveToTomorrow, onDuplicateToTom
             {inChain && (
               <Link2 size={9} style={{ color: COLORS.inkLight }} strokeWidth={2.5} aria-label="חלק משרשור" />
             )}
+            {getTaskStatus(task) === 'inProgress' && (
+              <span className="px-1.5 rounded inline-flex items-center"
+                style={{ background: '#FDF3E1', color: '#A36C12',
+                  fontSize: '9.5px', fontWeight: 700, height: '14px', letterSpacing: '0.03em' }}>
+                בתהליך
+              </span>
+            )}
           </div>
         </div>
 
         {/* Urgency */}
-        {!isWater && !task.isBonus && (
+        {!isWater && !task.counter && !task.isBonus && (
           <div className="flex items-center gap-1 flex-shrink-0">
             {showUrgencyControls && (
               <button onClick={() => cycleUrgency(-1)}
@@ -1459,58 +1773,92 @@ function TaskCard({ task, onUpdate, onDelete, onMoveToTomorrow, onDuplicateToTom
         )}
 
         {/* Water counter */}
-        {isWater && (
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button onClick={() => {
-                const cups = task.waterCups || 0;
-                if (cups <= 0) return;
-                onUpdate(task.id, { waterCups: cups - 1, completedAt: null });
-              }}
-              disabled={(task.waterCups || 0) === 0}
-              className="rounded transition-all active:scale-90"
-              style={{ background: COLORS.borderSoft, color: COLORS.inkSoft,
-                width: '22px', height: '22px', fontSize: '14px', fontWeight: 700, lineHeight: 1,
-                opacity: (task.waterCups || 0) === 0 ? 0.35 : 1 }}>
-              −
-            </button>
-            <div className="rounded flex items-center gap-1 px-2"
-              style={{ background: isComplete ? cat.color
-                  : (task.waterCups || 0) > 0 ? cat.tint : COLORS.borderSoft,
-                color: isComplete ? 'white'
-                  : (task.waterCups || 0) > 0 ? cat.color : COLORS.inkLight,
-                height: '22px', minWidth: '52px', justifyContent: 'center' }}>
-              <Droplet size={10} fill="currentColor" strokeWidth={0} />
-              <span style={{ fontSize: '11.5px', fontWeight: 700, letterSpacing: '0.02em' }}>
-                {task.waterCups || 0}/{WATER_GOAL}
-              </span>
-            </div>
-            <button onClick={() => {
-                const cups = task.waterCups || 0;
-                const newCups = Math.min(cups + 1, WATER_GOAL);
-                onUpdate(task.id, { waterCups: newCups, completedAt: newCups >= WATER_GOAL ? Date.now() : null });
-              }}
-              disabled={(task.waterCups || 0) >= WATER_GOAL}
-              className="rounded transition-all active:scale-90"
-              style={{ background: (task.waterCups || 0) >= WATER_GOAL ? COLORS.borderSoft : cat.color,
-                color: (task.waterCups || 0) >= WATER_GOAL ? COLORS.inkLight : 'white',
-                width: '22px', height: '22px', fontSize: '14px', fontWeight: 700, lineHeight: 1,
-                opacity: (task.waterCups || 0) >= WATER_GOAL ? 0.35 : 1 }}>
-              +
-            </button>
-          </div>
-        )}
+        {/* Counter (water or any task with task.counter) */}
+        {(isWater || task.counter) && (() => {
+          // For water, derive counter from waterCups + WATER_GOAL
+          const count = isWater ? (task.waterCups || 0) : (task.counter?.count || 0);
+          const target = isWater ? WATER_GOAL : (task.counter?.target || null);
+          const hasTarget = target != null && target > 0;
+          const atTarget = hasTarget && count >= target;
+          const atMin = count <= 0;
 
-        {/* Checkbox */}
-        {!isWater && (
-          <button onClick={toggleComplete}
-            className="rounded-full flex items-center justify-center flex-shrink-0 transition-all active:scale-90"
-            style={{ width: '22px', height: '22px',
-              background: isComplete ? COLORS.ink : 'transparent',
-              border: `1.5px solid ${isComplete ? COLORS.ink : COLORS.border}` }}
-            aria-label={isComplete ? 'בטל סימון' : 'סמן כהושלם'}>
-            {isComplete && <Check size={11} strokeWidth={3.5} color="white" />}
-          </button>
-        )}
+          const updateCount = (newCount) => {
+            if (isWater) {
+              const capped = Math.max(0, hasTarget ? Math.min(newCount, target) : newCount);
+              const reachedTarget = hasTarget && capped >= target;
+              onUpdate(task.id, {
+                waterCups: capped,
+                completedAt: reachedTarget ? Date.now() : null,
+                status: reachedTarget ? 'done' : (capped > 0 ? 'inProgress' : 'open'),
+              });
+            } else {
+              const capped = Math.max(0, newCount);
+              const reachedTarget = hasTarget && capped >= target;
+              onUpdate(task.id, {
+                counter: { count: capped, target: target },
+                completedAt: reachedTarget ? Date.now() : null,
+                completed: reachedTarget,
+                status: reachedTarget ? 'done' : (capped > 0 ? 'inProgress' : 'open'),
+              });
+            }
+          };
+
+          return (
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button onClick={() => updateCount(count - 1)}
+                disabled={atMin}
+                className="rounded transition-all active:scale-90"
+                style={{ background: COLORS.borderSoft, color: COLORS.inkSoft,
+                  width: '22px', height: '22px', fontSize: '14px', fontWeight: 700, lineHeight: 1,
+                  opacity: atMin ? 0.35 : 1 }}>
+                −
+              </button>
+              <div className="rounded flex items-center gap-1 px-2"
+                style={{ background: atTarget ? cat.color
+                    : count > 0 ? cat.tint : COLORS.borderSoft,
+                  color: atTarget ? 'white'
+                    : count > 0 ? cat.color : COLORS.inkLight,
+                  height: '22px', minWidth: hasTarget ? '52px' : '36px', justifyContent: 'center' }}>
+                {isWater && <Droplet size={10} fill="currentColor" strokeWidth={0} />}
+                <span style={{ fontSize: '11.5px', fontWeight: 700, letterSpacing: '0.02em' }}>
+                  {hasTarget ? `${count}/${target}` : count}
+                </span>
+              </div>
+              <button onClick={() => updateCount(count + 1)}
+                disabled={hasTarget && atTarget}
+                className="rounded transition-all active:scale-90"
+                style={{ background: (hasTarget && atTarget) ? COLORS.borderSoft : cat.color,
+                  color: (hasTarget && atTarget) ? COLORS.inkLight : 'white',
+                  width: '22px', height: '22px', fontSize: '14px', fontWeight: 700, lineHeight: 1,
+                  opacity: (hasTarget && atTarget) ? 0.35 : 1 }}>
+                +
+              </button>
+            </div>
+          );
+        })()}
+
+        {/* Status cycle button: open → inProgress → done → open */}
+        {!isWater && !task.counter && (() => {
+          const status = getTaskStatus(task);
+          const isOpen = status === 'open';
+          const isInProgress = status === 'inProgress';
+          const isDone = status === 'done';
+          return (
+            <button onClick={cycleStatus}
+              className="rounded-full flex items-center justify-center flex-shrink-0 transition-all active:scale-90"
+              style={{ width: '22px', height: '22px',
+                background: isDone ? COLORS.ink : (isInProgress ? '#E8A23B' : 'transparent'),
+                border: `1.5px solid ${isDone ? COLORS.ink : (isInProgress ? '#E8A23B' : COLORS.border)}` }}
+              aria-label={isDone ? 'בוצע' : isInProgress ? 'בתהליך' : 'פתוח'}>
+              {isDone && <Check size={11} strokeWidth={3.5} color="white" />}
+              {isInProgress && (
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                  <path d="M5.5 0.5 A 5 5 0 0 1 5.5 10.5 Z" fill="white" />
+                </svg>
+              )}
+            </button>
+          );
+        })()}
       </div>
 
       {/* Footer actions - always full opacity, clearly enabled */}
@@ -1527,14 +1875,12 @@ function TaskCard({ task, onUpdate, onDelete, onMoveToTomorrow, onDuplicateToTom
           style={{ color: COLORS.ink, fontSize: '11px', fontWeight: 600, opacity: 1 }}>
           <CopyPlus size={11} strokeWidth={2.2} /><span>שכפל למחר</span>
         </button>
-        {!isEditing && (
-          <button onClick={() => setIsEditing(true)}
-            className="flex items-center gap-1 transition-all hover:opacity-100 active:scale-95"
-            style={{ color: COLORS.inkSoft, fontSize: '11px', fontWeight: 500, opacity: 1 }}
-            aria-label="עריכה">
-            <Pencil size={11} /><span>ערוך</span>
-          </button>
-        )}
+        <button onClick={() => setIsEditing(true)}
+          className="flex items-center gap-1 transition-all hover:opacity-100 active:scale-95"
+          style={{ color: COLORS.inkSoft, fontSize: '11px', fontWeight: 500, opacity: 1 }}
+          aria-label="עריכה">
+          <Pencil size={11} /><span>ערוך</span>
+        </button>
         {deleteState === 'idle' ? (
           <button onClick={() => setDeleteState('confirming')}
             className="flex items-center transition-all hover:opacity-100 active:scale-95 mr-auto"
@@ -1720,12 +2066,16 @@ function ChainCard({ chain, triggerCat, isDisabled, onUpdate, onDelete, onToggle
 // MOMENTS VIEW
 // ============================================
 
-function MomentsView({ moments, onAdd, onDelete, onBack }) {
+function MomentsView({ moments, todayKey, onAdd, onDelete, onBack }) {
   const [text, setText] = useState('');
 
   const grouped = useMemo(() => {
-    const today = getDayKey();
-    const yesterday = getDaysAgoKey(1);
+    const today = todayKey;
+    const yesterday = (() => {
+      const d = dayKeyFromString(today);
+      d.setDate(d.getDate() - 1);
+      return getDayKey(d);
+    })();
     const groups = {};
     [...moments].sort((a, b) => b.createdAt - a.createdAt).forEach((m) => {
       let label;
@@ -1736,7 +2086,7 @@ function MomentsView({ moments, onAdd, onDelete, onBack }) {
       groups[label].push(m);
     });
     return groups;
-  }, [moments]);
+  }, [moments, todayKey]);
 
   const submit = () => { if (!text.trim()) return; onAdd(text.trim()); setText(''); };
 
@@ -1989,23 +2339,50 @@ function WeeklySummaryView({ tasks, moments, todayKey, onBack }) {
     return list;
   }, [tasks, moments, todayKey]);
 
-  const weekTasks = tasks.filter((t) => {
-    const cutoff = getDaysAgoKey(6);
-    return t.dayDate >= cutoff && isTaskComplete(t);
-  });
-  const weekMoments = moments.filter((m) => m.dayDate >= getDaysAgoKey(6));
+  // Use a 7-day window ending today
+  const weekStart = useMemo(() => getDaysAgoKey(6), []);
+  const inWeek = useCallback((dayDate) => dayDate >= weekStart && dayDate <= todayKey, [weekStart, todayKey]);
+
+  const weekTasks = useMemo(() => tasks.filter((t) => inWeek(t.dayDate)), [tasks, inWeek]);
+  const weekCompleted = useMemo(() => weekTasks.filter(isTaskComplete), [weekTasks]);
+  const weekMoments = useMemo(() => moments.filter((m) => inWeek(m.dayDate)), [moments, inWeek]);
+
+  // Pending: tasks from past days in this week that are still open/inProgress
+  const weekPending = useMemo(
+    () => weekTasks.filter((t) => !isTaskComplete(t) && t.dayDate < todayKey),
+    [weekTasks, todayKey]
+  );
+
+  // Postponed: total move count this week (sum of moveCount on week tasks)
+  const weekPostponed = useMemo(
+    () => weekTasks.reduce((sum, t) => sum + (t.moveCount || 0), 0),
+    [weekTasks]
+  );
+
+  // Most postponed task (the one with highest moveCount this week)
+  const mostPostponed = useMemo(() => {
+    let max = 0;
+    let maxTask = null;
+    for (const t of weekTasks) {
+      if ((t.moveCount || 0) > max) {
+        max = t.moveCount;
+        maxTask = t;
+      }
+    }
+    return maxTask;
+  }, [weekTasks]);
 
   const byCategory = useMemo(() => {
     const groups = {};
-    for (const t of weekTasks) {
+    for (const t of weekCompleted) {
       const c = t.category || 'כללי';
       groups[c] = (groups[c] || 0) + 1;
     }
     return Object.entries(groups).sort((a, b) => b[1] - a[1]);
-  }, [weekTasks]);
+  }, [weekCompleted]);
 
-  const totalCompleted = weekTasks.length;
-  const totalBonus = weekTasks.filter((t) => t.isBonus).length;
+  const totalCompleted = weekCompleted.length;
+  const totalBonus = weekCompleted.filter((t) => t.isBonus).length;
   const maxDayDone = Math.max(...days.map((d) => d.completed), 1);
 
   let streak = 0;
@@ -2033,7 +2410,7 @@ function WeeklySummaryView({ tasks, moments, todayKey, onBack }) {
         </button>
       </div>
 
-      {totalCompleted === 0 && weekMoments.length === 0 ? (
+      {totalCompleted === 0 && weekMoments.length === 0 && weekTasks.length === 0 ? (
         <div className="text-center py-16 mt-8">
           <p style={{ color: COLORS.inkSoft, fontSize: '15px', fontWeight: 500 }}>
             השבוע עוד לא התחיל להצטבר
@@ -2044,12 +2421,47 @@ function WeeklySummaryView({ tasks, moments, todayKey, onBack }) {
         </div>
       ) : (
         <div className="mt-7 space-y-5">
+          {/* Top stats row */}
           <div className="grid grid-cols-3 gap-2">
-            <StatCard label="סה״כ" value={totalCompleted} color={COLORS.ink} />
+            <StatCard label="הושלמו" value={totalCompleted} color={COLORS.ink} />
             <StatCard label="✦ בונוס" value={totalBonus} color={COLORS.moment} tint={COLORS.momentTint} />
             <StatCard label={<span className="inline-flex items-center gap-1"><Flame size={11} /> רצף</span>}
               value={streak} color={streak >= 3 ? COLORS.cnf : COLORS.ink} />
           </div>
+
+          {/* Secondary stats - pending and postponed */}
+          {(weekPending.length > 0 || weekPostponed > 0 || weekMoments.length > 0) && (
+            <div className="grid grid-cols-3 gap-2">
+              <StatCard label="עוד פתוחות" value={weekPending.length}
+                color={weekPending.length > 0 ? '#A36C12' : COLORS.inkLight} />
+              <StatCard label="הועברו" value={weekPostponed}
+                color={COLORS.inkSoft} />
+              <StatCard label={<span className="inline-flex items-center gap-1"><Sparkles size={10} /> רגעים</span>}
+                value={weekMoments.length} color={COLORS.moment} tint={COLORS.momentTint} />
+            </div>
+          )}
+
+          {/* Most postponed */}
+          {mostPostponed && mostPostponed.moveCount >= 2 && (
+            <div className="rounded-2xl p-3.5 flex items-start gap-3"
+              style={{ background: '#FDF3E1', border: '1px solid #F2DDB0' }}>
+              <div className="rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ background: 'white', width: '32px', height: '32px' }}>
+                <ArrowLeft size={14} style={{ color: '#A36C12' }} strokeWidth={2.5} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div style={{ color: '#A36C12', fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                  הכי הרבה פעמים נדחתה
+                </div>
+                <div className="mt-0.5" style={{ color: COLORS.ink, fontSize: '13px', fontWeight: 600, lineHeight: 1.3 }}>
+                  {mostPostponed.text}
+                </div>
+                <div className="mt-0.5" style={{ color: COLORS.inkLight, fontSize: '10.5px' }}>
+                  הועברה {mostPostponed.moveCount} פעמים · אולי לפצל לחתיכה קטנה יותר?
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="rounded-2xl p-4" style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
             <h3 className="mb-3"
