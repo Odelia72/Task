@@ -398,10 +398,26 @@ function App() {
       });
     }
   }, [chains, dayKeyAtOffset]);
-  const updateTask = useCallback(
-    (id, updates) => setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t))),
-    []
-  );
+  // Harvest event - triggered when a hard task transitions to complete
+  const [harvest, setHarvest] = useState(null); // { task, ts } | null
+
+  const updateTask = useCallback((id, updates) => {
+    setTasks((prev) => {
+      const next = prev.map((t) => {
+        if (t.id !== id) return t;
+        const newTask = { ...t, ...updates };
+        // Detect transition to complete on a hard task
+        const wasComplete = isTaskComplete(t);
+        const nowComplete = isTaskComplete(newTask);
+        if (!wasComplete && nowComplete && newTask.isHard) {
+          // Defer state update to next tick to avoid render-in-render
+          setTimeout(() => setHarvest({ task: newTask, ts: Date.now() }), 0);
+        }
+        return newTask;
+      });
+      return next;
+    });
+  }, []);
   const deleteTask = useCallback((id) => setTasks((prev) => prev.filter((t) => t.id !== id)), []);
   const moveTaskToTomorrow = useCallback((id) => {
     setTasks((prev) => prev.map((t) => {
@@ -425,7 +441,11 @@ function App() {
       // Compute completedAt as end-of-day on the task's original date
       const d = dayKeyFromString(t.dayDate);
       d.setHours(23, 59, 0, 0);
-      return { ...t, status: 'done', completed: true, completedAt: d.getTime() };
+      const newTask = { ...t, status: 'done', completed: true, completedAt: d.getTime() };
+      if (!isTaskComplete(t) && t.isHard) {
+        setTimeout(() => setHarvest({ task: newTask, ts: Date.now() }), 0);
+      }
+      return newTask;
     }));
   }, []);
 
@@ -507,6 +527,7 @@ function App() {
             onOpenDaily={() => setView('daily')}
             onOpenWeekly={() => setView('weekly')}
             onOpenChains={() => setView('chains')}
+            onOpenGarden={() => setView('garden')}
           />
         )}
         {view === 'moments' && (
@@ -521,7 +542,11 @@ function App() {
         {view === 'chains' && (
           <ChainsView chains={chains} onUpdate={updateChain} onDelete={deleteChain} onToggle={toggleChain} onBack={() => setView('today')} />
         )}
+        {view === 'garden' && (
+          <GardenView tasks={tasks} todayKey={todayKey} onBack={() => setView('today')} />
+        )}
       </div>
+      {harvest && <HarvestOverlay key={harvest.ts} task={harvest.task} onDone={() => setHarvest(null)} />}
     </div>
   );
 }
@@ -636,7 +661,7 @@ function TodayMomentsSection({ moments, onAddMoment, onDeleteMoment, onOpenMomen
 // TODAY VIEW
 // ============================================
 
-function TodayView({ tasks, chains, moments, todayKey, onAdd, onUpdate, onDelete, onMoveToTomorrow, onMoveToToday, onMarkAsDone, onDuplicateToTomorrow, onDeleteChainGroup, onAddMoment, onDeleteMoment, onOpenMoments, onOpenDaily, onOpenWeekly, onOpenChains }) {
+function TodayView({ tasks, chains, moments, todayKey, onAdd, onUpdate, onDelete, onMoveToTomorrow, onMoveToToday, onMarkAsDone, onDuplicateToTomorrow, onDeleteChainGroup, onAddMoment, onDeleteMoment, onOpenMoments, onOpenDaily, onOpenWeekly, onOpenChains, onOpenGarden }) {
   const [showAdd, setShowAdd] = useState(false);
   const [dayOffset, setDayOffset] = useState(0);
 
@@ -698,6 +723,12 @@ function TodayView({ tasks, chains, moments, todayKey, onAdd, onUpdate, onDelete
     [moments, todayKey]
   );
 
+  // Total strawberries (hard tasks completed, all time)
+  const strawberryCount = useMemo(
+    () => tasks.filter((t) => t.isHard && isTaskComplete(t)).length,
+    [tasks]
+  );
+
   const goToToday = () => setDayOffset(0);
   const goPrevDay = () => setDayOffset((o) => Math.max(0, o - 1));
   const goNextDay = () => setDayOffset((o) => o + 1);
@@ -740,6 +771,17 @@ function TodayView({ tasks, chains, moments, todayKey, onAdd, onUpdate, onDelete
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          {strawberryCount > 0 && onOpenGarden && (
+            <button onClick={onOpenGarden}
+              className="rounded-full px-2.5 transition-all active:scale-95 hover:opacity-80 flex items-center gap-1"
+              style={{ background: '#FFE8E2', border: `1px solid #FAD4CB`, height: '32px' }}
+              aria-label="התותים שלי">
+              <span style={{ fontSize: '14px' }}>🍓</span>
+              <span style={{ color: '#D44A3D', fontSize: '12px', fontWeight: 700 }}>
+                {strawberryCount}
+              </span>
+            </button>
+          )}
           {chains && chains.length > 0 && onOpenChains && (
             <button onClick={onOpenChains}
               className="rounded-full p-2 transition-all active:scale-95 hover:opacity-80"
@@ -1024,6 +1066,7 @@ function AddTaskForm({ onAdd, onCancel, todayKey, defaultDayDate, allTasks, allC
   const [text, setText] = useState('');
   const [category, setCategory] = useState('');
   const [isBonus, setIsBonus] = useState(false);
+  const [isHard, setIsHard] = useState(false);
 
   // Chain-related state
   const [chainLinks, setChainLinks] = useState([]); // [{text, category, dayOffset}]
@@ -1161,6 +1204,7 @@ function AddTaskForm({ onAdd, onCancel, todayKey, defaultDayDate, allTasks, allC
       status: isBonus && isPastOrToday ? 'done' : 'open',
       completed: isBonus && isPastOrToday,
       isBonus: isBonus && isPastOrToday,
+      isHard: isHard,
       dayDate,
       createdAt: Date.now(),
       completedAt: isBonus && isPastOrToday ? Date.now() : null,
@@ -1488,6 +1532,25 @@ function AddTaskForm({ onAdd, onCancel, todayKey, defaultDayDate, allTasks, allC
         </button>
       )}
 
+      {/* Hard task toggle */}
+      {text.trim() && category.trim() && (
+        <div className="mt-3">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={isHard} onChange={(e) => setIsHard(e.target.checked)} className="sr-only" />
+            <div className="rounded flex items-center justify-center transition-all"
+              style={{ width: '16px', height: '16px',
+                background: isHard ? '#D44A3D' : 'transparent',
+                border: `1.5px solid ${isHard ? '#D44A3D' : COLORS.border}` }}>
+              {isHard && <Check size={10} strokeWidth={3.5} color="white" />}
+            </div>
+            <span style={{ color: isHard ? '#D44A3D' : COLORS.inkSoft,
+              fontSize: '12px', fontWeight: isHard ? 600 : 500 }}>
+              🍓 משימה מאתגרת (כסף, בירוקרטיה, וכו')
+            </span>
+          </label>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="flex items-center justify-between mt-4">
         {dateMode === 'today' ? (
@@ -1544,6 +1607,7 @@ function EditTaskInline({ task, todayKey, onSave, onCancel, allTasks }) {
   const [text, setText] = useState(task.text);
   const [category, setCategory] = useState(task.category);
   const [dayDate, setDayDate] = useState(task.dayDate);
+  const [isHard, setIsHard] = useState(!!task.isHard);
   const textRef = useRef(null);
 
   useEffect(() => { textRef.current?.focus(); textRef.current?.select(); }, []);
@@ -1577,7 +1641,7 @@ function EditTaskInline({ task, todayKey, onSave, onCancel, allTasks }) {
   const canSave = text.trim() && category.trim();
   const handleSave = () => {
     if (!canSave) return;
-    onSave({ text: text.trim(), category: category.trim(), dayDate });
+    onSave({ text: text.trim(), category: category.trim(), dayDate, isHard });
   };
 
   const cat = category.trim() ? getCategoryColor(category.trim()) : null;
@@ -1643,6 +1707,23 @@ function EditTaskInline({ task, todayKey, onSave, onCancel, allTasks }) {
             onChange={(e) => setDayDate(e.target.value)}
             className="bg-transparent outline-none border-none"
             style={{ fontSize: '11.5px', color: 'inherit', width: '85px', fontFamily: FONT }} />
+        </label>
+      </div>
+
+      {/* Hard task toggle */}
+      <div className="mt-3">
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={isHard} onChange={(e) => setIsHard(e.target.checked)} className="sr-only" />
+          <div className="rounded flex items-center justify-center transition-all"
+            style={{ width: '15px', height: '15px',
+              background: isHard ? '#D44A3D' : 'transparent',
+              border: `1.5px solid ${isHard ? '#D44A3D' : COLORS.border}` }}>
+            {isHard && <Check size={9} strokeWidth={3.5} color="white" />}
+          </div>
+          <span style={{ color: isHard ? '#D44A3D' : COLORS.inkSoft,
+            fontSize: '11.5px', fontWeight: isHard ? 600 : 500 }}>
+            🍓 משימה מאתגרת
+          </span>
         </label>
       </div>
 
@@ -1732,6 +1813,12 @@ function TaskCard({ task, todayKey, allTasks, onUpdate, onDelete, onMoveToTomorr
             <span style={{ color: cat.color, fontWeight: 600 }}>{task.category}</span>
             {inChain && (
               <Link2 size={9} style={{ color: COLORS.inkLight }} strokeWidth={2.5} aria-label="חלק משרשור" />
+            )}
+            {task.isHard && (
+              <span style={{ fontSize: '11px', opacity: isComplete ? 1 : 0.7 }}
+                aria-label="משימה מאתגרת">
+                🍓
+              </span>
             )}
             {getTaskStatus(task) === 'inProgress' && (
               <span className="px-1.5 rounded inline-flex items-center"
@@ -2359,6 +2446,12 @@ function WeeklySummaryView({ tasks, moments, todayKey, onBack }) {
     [weekTasks]
   );
 
+  // Strawberries earned this week (hard tasks completed in this week)
+  const weekStrawberries = useMemo(
+    () => weekCompleted.filter((t) => t.isHard).length,
+    [weekCompleted]
+  );
+
   // Most postponed task (the one with highest moveCount this week)
   const mostPostponed = useMemo(() => {
     let max = 0;
@@ -2428,6 +2521,26 @@ function WeeklySummaryView({ tasks, moments, todayKey, onBack }) {
             <StatCard label={<span className="inline-flex items-center gap-1"><Flame size={11} /> רצף</span>}
               value={streak} color={streak >= 3 ? COLORS.cnf : COLORS.ink} />
           </div>
+
+          {/* Strawberries banner - prominent */}
+          {weekStrawberries > 0 && (
+            <div className="rounded-2xl p-4 flex items-center gap-3"
+              style={{ background: 'linear-gradient(135deg, #FFE8E2, #FFD4CB)',
+                border: '1px solid #F5B5A8' }}>
+              <div className="rounded-full flex items-center justify-center"
+                style={{ background: 'white', width: '40px', height: '40px', fontSize: '20px' }}>
+                🍓
+              </div>
+              <div className="flex-1">
+                <div style={{ color: '#A8392E', fontSize: '14px', fontWeight: 700 }}>
+                  {weekStrawberries} {weekStrawberries === 1 ? 'תות' : 'תותים'} השבוע
+                </div>
+                <div className="mt-0.5" style={{ color: '#D44A3D', fontSize: '11.5px' }}>
+                  משימות קשות שעשית — לא מובן מאליו
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Secondary stats - pending and postponed */}
           {(weekPending.length > 0 || weekPostponed > 0 || weekMoments.length > 0) && (
@@ -2569,6 +2682,213 @@ function StatCard({ label, value, color, tint }) {
         {label}
       </div>
     </div>
+  );
+}
+
+// ============================================
+// HARVEST OVERLAY (celebration when completing a hard task)
+// ============================================
+
+function HarvestOverlay({ task, onDone }) {
+  const [phase, setPhase] = useState('enter'); // enter | hold | exit
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setPhase('hold'), 50);
+    const t2 = setTimeout(() => setPhase('exit'), 1600);
+    const t3 = setTimeout(() => onDone(), 2000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [onDone]);
+
+  const messages = [
+    'איזה כיף!',
+    'יפה מאוד!',
+    'כל הכבוד!',
+    'הצלחת!',
+    'נהדר!',
+    'איזו עוצמה!',
+  ];
+  const msg = useMemo(() => messages[Math.floor(Math.random() * messages.length)], []);
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-50"
+      style={{
+        opacity: phase === 'enter' ? 0 : phase === 'exit' ? 0 : 1,
+        transition: 'opacity 350ms ease-out',
+      }}>
+      <div className="rounded-3xl px-8 py-7 flex flex-col items-center"
+        style={{
+          background: 'rgba(255,255,255,0.97)',
+          boxShadow: '0 20px 60px rgba(212, 74, 61, 0.25), 0 0 0 1px rgba(212, 74, 61, 0.1)',
+          transform: phase === 'enter' ? 'scale(0.5)' : phase === 'exit' ? 'scale(1.1)' : 'scale(1)',
+          transition: 'transform 500ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+          backdropFilter: 'blur(8px)',
+        }}>
+        <div style={{ fontSize: '56px', lineHeight: 1,
+          transform: phase === 'hold' ? 'scale(1)' : 'scale(0.6)',
+          transition: 'transform 600ms cubic-bezier(0.34, 1.56, 0.64, 1) 100ms' }}>
+          🍓
+        </div>
+        <div className="mt-3" style={{ color: '#D44A3D', fontSize: '14px', fontWeight: 700, letterSpacing: '0.02em' }}>
+          +1 תות
+        </div>
+        <div className="mt-1" style={{ color: COLORS.inkSoft, fontSize: '12px', fontWeight: 500 }}>
+          {msg}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// GARDEN VIEW (your strawberries)
+// ============================================
+
+function GardenView({ tasks, todayKey, onBack }) {
+  const harvested = useMemo(
+    () => tasks
+      .filter((t) => t.isHard && isTaskComplete(t))
+      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)),
+    [tasks]
+  );
+
+  // Group by week
+  const groupedByWeek = useMemo(() => {
+    const groups = {};
+    const todayDate = dayKeyFromString(todayKey);
+    for (const t of harvested) {
+      const d = dayKeyFromString(t.dayDate);
+      const diffDays = Math.floor((todayDate - d) / (1000 * 60 * 60 * 24));
+      let label;
+      if (diffDays <= 6) label = 'השבוע';
+      else if (diffDays <= 13) label = 'שבוע שעבר';
+      else if (diffDays <= 30) label = 'החודש';
+      else label = 'מוקדם יותר';
+      groups[label] = groups[label] || [];
+      groups[label].push(t);
+    }
+    return groups;
+  }, [harvested, todayKey]);
+
+  const order = ['השבוע', 'שבוע שעבר', 'החודש', 'מוקדם יותר'];
+
+  // Count by category
+  const byCategory = useMemo(() => {
+    const map = {};
+    for (const t of harvested) {
+      map[t.category] = (map[t.category] || 0) + 1;
+    }
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [harvested]);
+
+  return (
+    <>
+      <div className="flex items-start justify-between mb-1">
+        <div className="text-right">
+          <div className="mb-0.5" style={{ color: COLORS.inkLight, fontSize: '11px' }}>
+            ניצחונות על משימות מאתגרות
+          </div>
+          <h1 className="font-bold tracking-tight"
+            style={{ color: COLORS.ink, fontSize: '26px', lineHeight: 1.1 }}>
+            הגינה שלי 🍓
+          </h1>
+        </div>
+        <button onClick={onBack}
+          className="rounded-full p-2 transition-all active:scale-95 hover:opacity-70"
+          style={{ color: COLORS.inkSoft }}>
+          <ChevronLeft size={20} style={{ transform: 'scaleX(-1)' }} />
+        </button>
+      </div>
+
+      {harvested.length === 0 ? (
+        <div className="text-center py-16 mt-8">
+          <div style={{ fontSize: '48px', opacity: 0.5 }}>🌱</div>
+          <p className="mt-3" style={{ color: COLORS.inkSoft, fontSize: '14px', fontWeight: 500 }}>
+            הגינה עוד לא הניבה
+          </p>
+          <p className="mt-1.5 mx-auto max-w-xs" style={{ color: COLORS.inkLight, fontSize: '12px', lineHeight: 1.5 }}>
+            סמני משימה כ"מאתגרת" בטופס ההוספה, וכל פעם שתסיימי אחת — תקבלי תות 🍓
+          </p>
+        </div>
+      ) : (
+        <div className="mt-7 space-y-5">
+          {/* Total */}
+          <div className="rounded-2xl p-5 text-center"
+            style={{ background: 'linear-gradient(135deg, #FFE8E2, #FFD4CB)',
+              border: '1px solid #F5B5A8' }}>
+            <div style={{ fontSize: '42px', lineHeight: 1 }}>🍓</div>
+            <div className="mt-2" style={{ color: '#D44A3D', fontSize: '36px', fontWeight: 800, lineHeight: 1 }}>
+              {harvested.length}
+            </div>
+            <div className="mt-1" style={{ color: '#A8392E', fontSize: '12px', fontWeight: 600 }}>
+              תות{harvested.length === 1 ? '' : 'ים'} בסך הכל
+            </div>
+          </div>
+
+          {/* By category */}
+          {byCategory.length > 0 && (
+            <div className="rounded-2xl p-4" style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+              <h3 className="mb-3"
+                style={{ color: COLORS.inkLight, fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                לפי קטגוריה
+              </h3>
+              <div className="flex flex-wrap gap-1.5">
+                {byCategory.map(([cat, count]) => {
+                  const c = getCategoryColor(cat);
+                  return (
+                    <div key={cat} className="rounded-full px-2.5 py-1 flex items-center gap-1.5"
+                      style={{ background: c.tint }}>
+                      <span style={{ color: c.color, fontSize: '11.5px', fontWeight: 600 }}>{cat}</span>
+                      <span style={{ color: c.color, fontSize: '11px', fontWeight: 700, opacity: 0.7 }}>
+                        🍓{count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Recent harvests by time period */}
+          {order.map((label) => {
+            const items = groupedByWeek[label];
+            if (!items || items.length === 0) return null;
+            return (
+              <div key={label}>
+                <div className="flex items-center gap-2 mb-2.5" style={{ paddingRight: '4px' }}>
+                  <h3 style={{ color: COLORS.inkLight, fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.06em' }}>
+                    {label} ({items.length})
+                  </h3>
+                  <div className="flex-1" style={{ height: '1px', background: COLORS.borderSoft }} />
+                </div>
+                <div className="space-y-1.5">
+                  {items.map((t) => {
+                    const cat = getCategoryColor(t.category);
+                    const completedDate = t.completedAt
+                      ? formatHebShort(new Date(t.completedAt))
+                      : formatHebShort(dayKeyFromString(t.dayDate));
+                    return (
+                      <div key={t.id} className="rounded-xl px-3 py-2.5 flex items-center gap-2.5"
+                        style={{ background: 'white', border: `1px solid ${COLORS.border}` }}>
+                        <span style={{ fontSize: '18px' }}>🍓</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="truncate" style={{ color: COLORS.ink, fontSize: '12.5px', fontWeight: 500 }}>
+                            {t.text}
+                          </div>
+                          <div style={{ color: cat.color, fontSize: '10.5px', fontWeight: 600 }}>
+                            {t.category}
+                            <span style={{ color: COLORS.inkLight, fontWeight: 500 }}> · {completedDate}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
