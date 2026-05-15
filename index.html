@@ -217,6 +217,10 @@ function isWaterCategory(category) {
 }
 
 function isTaskComplete(task) {
+  // Explicit "done" status takes precedence over counter values.
+  // This lets "כבר עשיתי" mark a water/counter task as complete
+  // without forcing the count to its target, preserving real numbers.
+  if (task.status === 'done') return true;
   if (isWaterCategory(task.category)) {
     return (task.waterCups || 0) >= WATER_GOAL;
   }
